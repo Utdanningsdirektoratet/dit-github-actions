@@ -1,0 +1,34 @@
+name: "Kubernetes - Deploy"
+description: "Set image on Kubernetes deployment"
+
+inputs:
+  kube-config:
+    description: "Base64 encoded kubeconfig"
+    required: true
+  namespace:
+    description: "Kubernetes namespace"
+    required: true
+  deployment:
+    description: "Kubernetes deployment name"
+    required: true
+  image:
+    description: "Full image reference (registry/image:tag)"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: azure/setup-kubectl@v3
+
+    - name: Deploy
+      shell: bash
+      run: |
+        echo "${{ inputs.kube-config }}" | base64 -d > /tmp/kubeconfig
+        export KUBECONFIG=/tmp/kubeconfig
+
+        echo "Deploying: ${{ inputs.image }}"
+        kubectl set image deployment/${{ inputs.deployment }} \
+          ${{ inputs.deployment }}=${{ inputs.image }} \
+          -n ${{ inputs.namespace }}
+
+        rm -f /tmp/kubeconfig

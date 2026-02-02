@@ -1,0 +1,67 @@
+name: "Kubernetes - Rollout"
+description: "Wait for rollout status and rollback on failure"
+
+inputs:
+  kube-config:
+    description: "Base64 encoded kubeconfig"
+    required: true
+  namespace:
+    description: "Kubernetes namespace"
+    required: true
+  deployment:
+    description: "Kubernetes deployment name"
+    required: true
+  timeout:
+    description: "Rollout timeout in seconds"
+    required: false
+    default: "300"
+  rollback-on-failure:
+    description: "Auto rollback on failure"
+    required: false
+    default: "true"
+
+outputs:
+  status:
+    description: "Rollout status (success, rolled-back, failed)"
+    value: ${{ steps.rollout.outputs.status }}
+
+runs:
+  using: "composite"
+  steps:
+    - uses: azure/setup-kubectl@v3
+
+    - name: Rollout
+      id: rollout
+      shell: bash
+      run: |
+        echo "${{ inputs.kube-config }}" | base64 -d > /tmp/kubeconfig
+        export KUBECONFIG=/tmp/kubeconfig
+
+        if kubectl rollout status deployment/${{ inputs.deployment }} \
+          -n ${{ inputs.namespace }} --timeout=${{ inputs.timeout }}s; then
+          echo "✅ Rollout successful"
+          echo "status=success" >> "$GITHUB_OUTPUT"
+        elif [ "${{ inputs.rollback-on-failure }}" == "true" ]; then
+          echo "❌ Failed, rolling back..."
+          kubectl rollout undo deployment/${{ inputs.deployment }} -n ${{ inputs.namespace }}
+
+          if kubectl rollout status deployment/${{ inputs.deployment }} \
+            -n ${{ inputs.namespace }} --timeout=${{ inputs.timeout }}s; then
+            echo "::error::Deployment failed, rolled back"
+            echo "status=rolled-back" >> "$GITHUB_OUTPUT"
+            exit 1
+          else
+            echo "::error::CRITICAL: Deployment and rollback both failed"
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            exit 2
+          fi
+        else
+          echo "::error::Rollout failed"
+          echo "status=failed" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: rm -f /tmp/kubeconfig
