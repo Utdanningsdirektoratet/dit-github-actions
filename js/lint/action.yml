@@ -1,0 +1,65 @@
+name: "JS - Lint"
+description: "Run lint checks with auto-detected package manager"
+
+inputs:
+  node-version:
+    description: "Node.js version"
+    required: false
+    default: "22"
+  working-directory:
+    description: "Directory to run lint in"
+    required: false
+    default: "."
+  lint-command:
+    description: "Lint command to run"
+    required: false
+    default: "lint"
+
+outputs:
+  package-manager:
+    description: "Detected package manager"
+    value: ${{ steps.detect.outputs.pm }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Detect package manager
+      id: detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -f "pnpm-lock.yaml" ]; then
+          echo "pm=pnpm" >> "$GITHUB_OUTPUT"
+        elif [ -f "yarn.lock" ]; then
+          echo "pm=yarn" >> "$GITHUB_OUTPUT"
+        elif [ -f "package-lock.json" ]; then
+          echo "pm=npm" >> "$GITHUB_OUTPUT"
+        else
+          echo "::error::No lock file found (pnpm-lock.yaml, yarn.lock, package-lock.json)"
+          exit 1
+        fi
+        echo "Detected: $(cat "$GITHUB_OUTPUT" | grep pm | cut -d= -f2)"
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Enable corepack
+      shell: bash
+      run: corepack enable
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        case "${{ steps.detect.outputs.pm }}" in
+          pnpm) pnpm install --frozen-lockfile ;;
+          yarn) yarn install --immutable ;;
+          npm)  npm ci ;;
+        esac
+
+    - name: Lint
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: ${{ steps.detect.outputs.pm }} run ${{ inputs.lint-command }}
