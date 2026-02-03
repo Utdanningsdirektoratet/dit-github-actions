@@ -1,0 +1,71 @@
+name: "JS - Install"
+description: "Setup Node.js and install dependencies with auto-detected package manager"
+
+inputs:
+  node-version:
+    description: "Node.js version"
+    required: false
+    default: "22"
+  working-directory:
+    description: "Directory containing package.json"
+    required: false
+    default: "."
+  package-manager:
+    description: "Package manager override (npm, yarn, pnpm). Auto-detects if not set."
+    required: false
+    default: ""
+
+outputs:
+  package-manager:
+    description: "Detected or specified package manager"
+    value: ${{ steps.detect.outputs.pm }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Detect package manager
+      id: detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        PM="${{ inputs.package-manager }}"
+
+        if [ -n "$PM" ]; then
+          if [[ ! "$PM" =~ ^(npm|yarn|pnpm)$ ]]; then
+            echo "::error::Invalid package manager '$PM'. Must be npm, yarn, or pnpm."
+            exit 1
+          fi
+          echo "pm=$PM" >> "$GITHUB_OUTPUT"
+          echo "Using override: $PM"
+        elif [ -f "pnpm-lock.yaml" ]; then
+          echo "pm=pnpm" >> "$GITHUB_OUTPUT"
+          echo "Detected: pnpm"
+        elif [ -f "yarn.lock" ]; then
+          echo "pm=yarn" >> "$GITHUB_OUTPUT"
+          echo "Detected: yarn"
+        elif [ -f "package-lock.json" ]; then
+          echo "pm=npm" >> "$GITHUB_OUTPUT"
+          echo "Detected: npm"
+        else
+          echo "::error::No lock file found (pnpm-lock.yaml, yarn.lock, package-lock.json)"
+          exit 1
+        fi
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Enable corepack
+      shell: bash
+      run: corepack enable
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        case "${{ steps.detect.outputs.pm }}" in
+          pnpm) pnpm install --frozen-lockfile ;;
+          yarn) yarn install --immutable ;;
+          npm)  npm ci ;;
+        esac
