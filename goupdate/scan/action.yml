@@ -30,5 +30,13 @@ runs:
 
         echo "package_managers=$PMS" >> "$GITHUB_OUTPUT"
         echo "rules=$RULES" >> "$GITHUB_OUTPUT"
-        echo "Package managers: $PMS"
-        echo "Rules: $RULES"
+
+        {
+          echo "## GoUpdate - Scan"
+          echo ""
+          echo "- **Package managers:** \`$PMS\`"
+          echo "- **Rules:** \`$RULES\`"
+          echo ""
+          echo "### Files"
+          echo "$OUTPUT" | jq -r '.files[] | "- `\(.file)` (\(.rule))"'
+        } >> "$GITHUB_STEP_SUMMARY"

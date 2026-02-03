@@ -46,8 +46,12 @@ runs:
         echo "minor=$MINOR" >> "$GITHUB_OUTPUT"
         echo "patch=$PATCH" >> "$GITHUB_OUTPUT"
 
-        echo "=== Outdated Packages ==="
-        echo "$OUTPUT" | jq -r '.packages[] | select(.status == "Outdated") | "\(.name): \(.installed_version) (major: \(.major), minor: \(.minor), patch: \(.patch))"'
-        echo ""
-        echo "Total: $TOTAL"
-        echo "Outdated: $OUTDATED (major: $MAJOR, minor: $MINOR, patch: $PATCH)"
+        {
+          echo "## GoUpdate - Outdated"
+          echo ""
+          echo "- **Total packages:** $TOTAL"
+          echo "- **Outdated:** $OUTDATED (major: $MAJOR, minor: $MINOR, patch: $PATCH)"
+          echo ""
+          echo "### Packages"
+          echo "$OUTPUT" | jq -r '.packages[] | select(.status == "Outdated") | "- `\(.name)`"'
+        } >> "$GITHUB_STEP_SUMMARY"
