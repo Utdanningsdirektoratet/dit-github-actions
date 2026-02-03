@@ -6,6 +6,10 @@ inputs:
     description: "Node.js version (set to enable)"
     required: false
     default: ""
+  node-pms:
+    description: "Node.js package managers (comma-separated: npm,yarn,pnpm)"
+    required: false
+    default: ""
   php-version:
     description: "PHP version (set to enable)"
     required: false
@@ -32,10 +36,23 @@ runs:
       with:
         node-version: ${{ inputs.node-version }}
 
-    - name: Enable corepack
+    - name: Setup Node.js package managers
       if: inputs.node-version != ''
       shell: bash
-      run: corepack enable
+      run: |
+        corepack enable
+
+        PMS="${{ inputs.node-pms }}"
+
+        if echo "$PMS" | grep -q "pnpm"; then
+          echo "Installing pnpm..."
+          corepack prepare pnpm@latest --activate
+        fi
+
+        if echo "$PMS" | grep -q "yarn"; then
+          echo "Installing yarn..."
+          corepack prepare yarn@stable --activate
+        fi
 
     - name: Setup PHP
       if: inputs.php-version != ''
