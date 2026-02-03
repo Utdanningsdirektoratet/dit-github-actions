@@ -40,4 +40,4 @@ runs:
         curl -sL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} "$DOWNLOAD_URL" | tar xzf - -C /usr/local/bin goupdate
 
         echo "version=$(goupdate version | grep Version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-        echo "goupdate: $(goupdate version | grep Version)"
+        goupdate version
