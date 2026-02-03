@@ -1,4 +1,4 @@
-name: "GoUpdate - Runtimes"
+name: "GitHub - Runtimes"
 description: "Setup language runtimes for dependency scanning"
 
 inputs:
