@@ -1,0 +1,43 @@
+name: "GoUpdate - Install"
+description: "Install goupdate binary from GitHub releases"
+
+inputs:
+  version:
+    description: "Version to install (latest or tag like v1.0.0)"
+    required: false
+    default: "latest"
+  repo:
+    description: "GitHub repository (owner/repo format)"
+    required: false
+    default: "ajxudir/goupdate"
+  github-token:
+    description: "GitHub token for API access"
+    required: false
+    default: ""
+
+outputs:
+  version:
+    description: "Installed version"
+    value: ${{ steps.install.outputs.version }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install goupdate
+      id: install
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        REPO="${{ inputs.repo }}"
+        VERSION="${{ inputs.version }}"
+        [[ "$VERSION" == "latest" ]] && URL="https://api.github.com/repos/$REPO/releases/latest" || URL="https://api.github.com/repos/$REPO/releases/tags/$VERSION"
+
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m); [[ "$ARCH" == "x86_64" ]] && ARCH="amd64"; [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+
+        DOWNLOAD_URL=$(curl -sL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} "$URL" | grep "browser_download_url.*${OS}_${ARCH}" | head -1 | cut -d '"' -f 4)
+        curl -sL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} "$DOWNLOAD_URL" | tar xzf - -C /usr/local/bin goupdate
+
+        echo "version=$(goupdate version | grep Version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        echo "goupdate: $(goupdate version | grep Version)"
