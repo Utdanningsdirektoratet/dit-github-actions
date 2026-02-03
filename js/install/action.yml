@@ -55,12 +55,26 @@ runs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: ${{ steps.detect.outputs.pm }}
-        cache-dependency-path: ${{ inputs.working-directory }}/*-lock.*
 
     - name: Enable corepack
       shell: bash
-      run: corepack enable
+      run: |
+        corepack enable
+        case "${{ steps.detect.outputs.pm }}" in
+          pnpm) corepack prepare pnpm@latest --activate ;;
+          yarn) corepack prepare yarn@stable --activate ;;
+        esac
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.npm
+          ~/.pnpm-store
+          ~/.yarn/cache
+        key: ${{ runner.os }}-${{ steps.detect.outputs.pm }}-${{ hashFiles('**/pnpm-lock.yaml', '**/yarn.lock', '**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ steps.detect.outputs.pm }}-
 
     - name: Install dependencies
       shell: bash
