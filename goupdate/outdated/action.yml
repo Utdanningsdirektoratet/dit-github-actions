@@ -52,6 +52,32 @@ runs:
           echo "- **Total packages:** $TOTAL"
           echo "- **Outdated:** $OUTDATED (major: $MAJOR, minor: $MINOR, patch: $PATCH)"
           echo ""
-          echo "### Packages"
-          echo "$OUTPUT" | jq -r '.packages[] | select(.status == "Outdated") | "- `\(.name)`"'
+          
+          MAJOR_PKGS=$(echo "$OUTPUT" | jq -r '.packages[] | select(.major != "#N/A") | "- `\(.name)`"')
+          MINOR_PKGS=$(echo "$OUTPUT" | jq -r '.packages[] | select(.minor != "#N/A") | "- `\(.name)`"')
+          PATCH_PKGS=$(echo "$OUTPUT" | jq -r '.packages[] | select(.patch != "#N/A") | "- `\(.name)`"')
+          UPTODATE_PKGS=$(echo "$OUTPUT" | jq -r '.packages[] | select(.status == "UpToDate") | "- `\(.name)`"')
+          
+          if [ -n "$MAJOR_PKGS" ]; then
+            echo "### Major"
+            echo "$MAJOR_PKGS"
+            echo ""
+          fi
+          
+          if [ -n "$MINOR_PKGS" ]; then
+            echo "### Minor"
+            echo "$MINOR_PKGS"
+            echo ""
+          fi
+          
+          if [ -n "$PATCH_PKGS" ]; then
+            echo "### Patch"
+            echo "$PATCH_PKGS"
+            echo ""
+          fi
+          
+          if [ -n "$UPTODATE_PKGS" ]; then
+            echo "### Up to date"
+            echo "$UPTODATE_PKGS"
+          fi
         } >> "$GITHUB_STEP_SUMMARY"
