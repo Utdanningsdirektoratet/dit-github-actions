@@ -1,0 +1,53 @@
+name: "GoUpdate - Outdated"
+description: "Check for outdated packages using goupdate"
+
+inputs:
+  working-directory:
+    description: "Directory to check"
+    required: false
+    default: "."
+
+outputs:
+  total:
+    description: "Total number of packages"
+    value: ${{ steps.outdated.outputs.total }}
+  has-updates:
+    description: "Whether any updates are available"
+    value: ${{ steps.outdated.outputs.has_updates }}
+  major:
+    description: "Number of major updates"
+    value: ${{ steps.outdated.outputs.major }}
+  minor:
+    description: "Number of minor updates"
+    value: ${{ steps.outdated.outputs.minor }}
+  patch:
+    description: "Number of patch updates"
+    value: ${{ steps.outdated.outputs.patch }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check outdated
+      id: outdated
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        OUTPUT=$(goupdate outdated --output json)
+
+        TOTAL=$(echo "$OUTPUT" | jq '.summary.total_packages // 0')
+        MAJOR=$(echo "$OUTPUT" | jq '.summary.has_major // 0')
+        MINOR=$(echo "$OUTPUT" | jq '.summary.has_minor // 0')
+        PATCH=$(echo "$OUTPUT" | jq '.summary.has_patch // 0')
+        OUTDATED=$(echo "$OUTPUT" | jq '.summary.outdated_packages // 0')
+
+        echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
+        echo "has_updates=$([[ $OUTDATED -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
+        echo "minor=$MINOR" >> "$GITHUB_OUTPUT"
+        echo "patch=$PATCH" >> "$GITHUB_OUTPUT"
+
+        echo "=== Outdated Packages ==="
+        echo "$OUTPUT" | jq -r '.packages[] | select(.status == "Outdated") | "\(.name): \(.installed_version) (major: \(.major), minor: \(.minor), patch: \(.patch))"'
+        echo ""
+        echo "Total: $TOTAL"
+        echo "Outdated: $OUTDATED (major: $MAJOR, minor: $MINOR, patch: $PATCH)"

@@ -1,0 +1,63 @@
+name: "GoUpdate - Runtimes"
+description: "Setup language runtimes for dependency scanning"
+
+inputs:
+  node-version:
+    description: "Node.js version (set to enable)"
+    required: false
+    default: ""
+  php-version:
+    description: "PHP version (set to enable)"
+    required: false
+    default: ""
+  python-version:
+    description: "Python version (set to enable)"
+    required: false
+    default: ""
+  go-version:
+    description: "Go version (set to enable)"
+    required: false
+    default: ""
+  dotnet-version:
+    description: ".NET version (set to enable)"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node.js
+      if: inputs.node-version != ''
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Enable corepack
+      if: inputs.node-version != ''
+      shell: bash
+      run: corepack enable
+
+    - name: Setup PHP
+      if: inputs.php-version != ''
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        tools: composer
+
+    - name: Setup Python
+      if: inputs.python-version != ''
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Setup Go
+      if: inputs.go-version != ''
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Setup .NET
+      if: inputs.dotnet-version != ''
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
