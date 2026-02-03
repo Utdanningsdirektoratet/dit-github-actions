@@ -19,6 +19,9 @@ outputs:
   package-manager:
     description: "Detected or specified package manager"
     value: ${{ steps.detect.outputs.pm }}
+  cache-hit:
+    description: "Whether cache was hit"
+    value: ${{ steps.cache.outputs.cache-hit }}
 
 runs:
   using: "composite"
@@ -65,18 +68,17 @@ runs:
           yarn) corepack prepare yarn@stable --activate ;;
         esac
 
-    - name: Cache dependencies
+    - name: Cache node_modules
+      id: cache
       uses: actions/cache@v4
       with:
         path: |
-          ~/.npm
-          ~/.pnpm-store
-          ~/.yarn/cache
-        key: ${{ runner.os }}-${{ steps.detect.outputs.pm }}-${{ hashFiles('**/pnpm-lock.yaml', '**/yarn.lock', '**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ steps.detect.outputs.pm }}-
+          ${{ inputs.working-directory }}/node_modules
+          ${{ inputs.working-directory }}/**/node_modules
+        key: ${{ runner.os }}-node_modules-${{ steps.detect.outputs.pm }}-${{ hashFiles(format('{0}/*-lock.*', inputs.working-directory), format('{0}/yarn.lock', inputs.working-directory)) }}
 
     - name: Install dependencies
+      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
