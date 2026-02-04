@@ -1,0 +1,300 @@
+name: "GitHub - PR"
+description: "Create pull request with optional merge using GitHub App"
+
+inputs:
+  app-id:
+    description: "GitHub App ID (required if merge or wait-for-checks enabled)"
+    required: false
+    default: ""
+  app-private-key:
+    description: "GitHub App private key (required if merge or wait-for-checks enabled)"
+    required: false
+    default: ""
+  github-token:
+    description: "GitHub token (used when GitHub App not required)"
+    required: false
+    default: ""
+  title:
+    description: "PR title"
+    required: true
+  body:
+    description: "PR body"
+    required: false
+    default: ""
+  base:
+    description: "Base branch"
+    required: true
+  head:
+    description: "Head branch"
+    required: true
+  merge:
+    description: "Merge PR after checks pass"
+    required: false
+    default: "false"
+  merge-method:
+    description: "Merge method (squash, merge, rebase)"
+    required: false
+    default: "squash"
+  wait-for-checks:
+    description: "Wait for checks to pass (seconds, 0 to disable)"
+    required: false
+    default: "300"
+  notify:
+    description: "Users/teams to notify on failure or timeout (space-separated, e.g. @user1 @user2 @org/team). If empty, job fails instead."
+    required: false
+    default: ""
+
+outputs:
+  pr-number:
+    description: "PR number"
+    value: ${{ steps.pr.outputs.number }}
+  pr-url:
+    description: "PR URL"
+    value: ${{ steps.pr.outputs.url }}
+  created:
+    description: "Whether PR was created"
+    value: ${{ steps.pr.outputs.created }}
+  merged:
+    description: "Whether PR was merged"
+    value: ${{ steps.merge.outputs.merged }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      id: validate
+      shell: bash
+      run: |
+        NEEDS_APP="false"
+        if [ "${{ inputs.merge }}" = "true" ] || [ "${{ inputs.wait-for-checks }}" != "0" ]; then
+          NEEDS_APP="true"
+        fi
+        echo "needs_app=$NEEDS_APP" >> "$GITHUB_OUTPUT"
+
+        if [ "$NEEDS_APP" = "true" ]; then
+          if [ -z "${{ inputs.app-id }}" ] || [ -z "${{ inputs.app-private-key }}" ]; then
+            echo "::error::app-id and app-private-key are required when merge or wait-for-checks is enabled"
+            exit 1
+          fi
+        else
+          if [ -z "${{ inputs.github-token }}" ]; then
+            echo "::error::github-token is required when GitHub App is not used"
+            exit 1
+          fi
+        fi
+
+    - name: Generate app token
+      id: app-token
+      if: steps.validate.outputs.needs_app == 'true'
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+
+    - name: Set token
+      id: token
+      shell: bash
+      env:
+        APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        GH_TOKEN_INPUT: ${{ inputs.github-token }}
+        NEEDS_APP: ${{ steps.validate.outputs.needs_app }}
+      run: |
+        if [ "$NEEDS_APP" = "true" ]; then
+          echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
+        else
+          echo "token=$GH_TOKEN_INPUT" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Validate token
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+      run: |
+        if ! gh auth status &>/dev/null; then
+          echo "::error::GitHub token is invalid"
+          exit 1
+        fi
+
+    - name: Create or find PR
+      id: pr
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        TITLE: ${{ inputs.title }}
+        BODY: ${{ inputs.body }}
+        BASE: ${{ inputs.base }}
+        HEAD: ${{ inputs.head }}
+      run: |
+        EXISTING=$(gh pr list --head "$HEAD" --base "$BASE" --json number,url -q '.[0]' 2>/dev/null || echo "")
+        if [ -n "$EXISTING" ] && [ "$EXISTING" != "null" ]; then
+          echo "number=$(echo "$EXISTING" | jq -r '.number')" >> "$GITHUB_OUTPUT"
+          echo "url=$(echo "$EXISTING" | jq -r '.url')" >> "$GITHUB_OUTPUT"
+          echo "created=false" >> "$GITHUB_OUTPUT"
+          echo "PR already exists: $(echo "$EXISTING" | jq -r '.url')"
+        else
+          PR_URL=$(gh pr create --title "$TITLE" --body "$BODY" --base "$BASE" --head "$HEAD")
+          PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Check PR state
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        PR_NUMBER: ${{ steps.pr.outputs.number }}
+      run: |
+        STATE=$(gh pr view "$PR_NUMBER" --json state -q '.state')
+
+        if [ "$STATE" = "OPEN" ]; then
+          echo "PR is open"
+        else
+          echo "::error::PR is not open (state: $STATE)"
+          exit 1
+        fi
+
+    - name: Wait for checks
+      id: wait
+      if: inputs.wait-for-checks != '0'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        PR_NUMBER: ${{ steps.pr.outputs.number }}
+        TIMEOUT_SECS: ${{ inputs.wait-for-checks }}
+        NOTIFY: ${{ inputs.notify }}
+      run: |
+        echo "Waiting up to ${TIMEOUT_SECS}s for checks to pass..."
+        ELAPSED=0
+        INTERVAL=30
+
+        while [ $ELAPSED -lt $TIMEOUT_SECS ]; do
+          STATE=$(gh pr view "$PR_NUMBER" --json state -q '.state')
+
+          if [ "$STATE" != "OPEN" ]; then
+            echo "checks_passed=false" >> "$GITHUB_OUTPUT"
+            echo "::error::PR is no longer open (state: $STATE)"
+            exit 1
+          fi
+
+          CHECKS_OUTPUT=$(gh pr checks "$PR_NUMBER" --json state -q '[.[] | .state] | unique' 2>&1) || true
+
+          if echo "$CHECKS_OUTPUT" | grep -q "no checks reported"; then
+            echo "checks_passed=true" >> "$GITHUB_OUTPUT"
+            echo "No checks required, continuing"
+            exit 0
+          fi
+
+          CHECKS="$CHECKS_OUTPUT"
+          echo "Check states: $CHECKS"
+
+          if echo "$CHECKS" | grep -q "FAILURE"; then
+            echo "checks_passed=false" >> "$GITHUB_OUTPUT"
+            if [ -n "$NOTIFY" ]; then
+              gh pr comment "$PR_NUMBER" --body "❌ Checks failed. $NOTIFY please review."
+              echo "::error::Checks failed, notified $NOTIFY"
+              exit 1
+            else
+              echo "::error::Checks failed"
+              exit 1
+            fi
+          fi
+
+          if [ "$CHECKS" = '["SUCCESS"]' ] || [ "$CHECKS" = '[]' ]; then
+            echo "checks_passed=true" >> "$GITHUB_OUTPUT"
+            echo "All checks passed"
+            exit 0
+          fi
+
+          sleep $INTERVAL
+          ELAPSED=$((ELAPSED + INTERVAL))
+          echo "Waiting... (${ELAPSED}s/${TIMEOUT_SECS}s)"
+        done
+
+        echo "checks_passed=false" >> "$GITHUB_OUTPUT"
+        echo "timed_out=true" >> "$GITHUB_OUTPUT"
+
+        if [ -n "$NOTIFY" ]; then
+          gh pr comment "$PR_NUMBER" --body "⏰ Checks timed out after ${TIMEOUT_SECS}s. $NOTIFY please review."
+          echo "notified=$NOTIFY" >> "$GITHUB_OUTPUT"
+          echo "::error::Timeout waiting for checks, notified $NOTIFY"
+          exit 1
+        else
+          echo "::error::Timeout waiting for checks"
+          exit 1
+        fi
+
+    - name: Merge PR
+      id: merge
+      if: inputs.merge == 'true' && (steps.wait.outputs.checks_passed == 'true' || inputs.wait-for-checks == '0')
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        PR_NUMBER: ${{ steps.pr.outputs.number }}
+        MERGE_METHOD: ${{ inputs.merge-method }}
+        NOTIFY: ${{ inputs.notify }}
+      run: |
+        if gh pr merge "$PR_NUMBER" --"$MERGE_METHOD" 2>&1; then
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+          echo "PR merged successfully"
+        else
+          echo "merged=false" >> "$GITHUB_OUTPUT"
+          if [ -n "$NOTIFY" ]; then
+            gh pr comment "$PR_NUMBER" --body "❌ Failed to merge PR. $NOTIFY please review."
+            echo "::error::Failed to merge PR, notified $NOTIFY"
+            exit 1
+          else
+            echo "::error::Failed to merge PR"
+            exit 1
+          fi
+        fi
+
+    - name: Summary
+      if: always() && steps.pr.outputs.number != ''
+      shell: bash
+      env:
+        CREATED: ${{ steps.pr.outputs.created }}
+        MERGE: ${{ inputs.merge }}
+        MERGE_METHOD: ${{ inputs.merge-method }}
+        MERGED: ${{ steps.merge.outputs.merged }}
+        CHECKS_PASSED: ${{ steps.wait.outputs.checks_passed }}
+        TIMED_OUT: ${{ steps.wait.outputs.timed_out }}
+        NOTIFIED: ${{ steps.wait.outputs.notified }}
+        WAIT_SECS: ${{ inputs.wait-for-checks }}
+      run: |
+        {
+          echo "## GitHub PR"
+          echo ""
+          echo "- **PR:** [#${{ steps.pr.outputs.number }}](${{ steps.pr.outputs.url }})"
+          echo "- **Branch:** \`${{ inputs.head }}\` → \`${{ inputs.base }}\`"
+          
+          if [ "$CREATED" = "true" ]; then
+            echo "- **Created:** ✅ New PR"
+          else
+            echo "- **Created:** ℹ️ Existing PR"
+          fi
+
+          if [ "$CHECKS_PASSED" = "true" ]; then
+            echo "- **Checks:** ✅ Passed"
+          elif [ "$CHECKS_PASSED" = "false" ]; then
+            if [ "$TIMED_OUT" = "true" ]; then
+              echo "- **Checks:** ⏰ Timed out (${WAIT_SECS}s)"
+            else
+              echo "- **Checks:** ❌ Failed"
+            fi
+            if [ -n "$NOTIFIED" ]; then
+              echo "- **Notified:** $NOTIFIED"
+            fi
+          fi
+
+          if [ "$MERGE" = "true" ]; then
+            if [ "$MERGED" = "true" ]; then
+              echo "- **Status:** ✅ Merged ($MERGE_METHOD)"
+            else
+              echo "- **Status:** ❌ Merge failed"
+            fi
+          else
+            echo "- **Status:** 🔓 Open"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"

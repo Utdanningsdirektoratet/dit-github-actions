@@ -1,17 +1,13 @@
 name: "JS - Install"
-description: "Setup Node.js and install dependencies with auto-detected package manager"
+description: "Install and cache Node.js dependencies"
 
 inputs:
-  node-version:
-    description: "Node.js version"
-    required: false
-    default: "22"
   working-directory:
     description: "Directory containing package.json"
     required: false
     default: "."
   package-manager:
-    description: "Package manager override (npm, yarn, pnpm). Auto-detects if not set."
+    description: "Package manager (npm, yarn, pnpm). Auto-detects if not set."
     required: false
     default: ""
 
@@ -39,34 +35,16 @@ runs:
             exit 1
           fi
           echo "pm=$PM" >> "$GITHUB_OUTPUT"
-          echo "Using override: $PM"
         elif [ -f "pnpm-lock.yaml" ]; then
           echo "pm=pnpm" >> "$GITHUB_OUTPUT"
-          echo "Detected: pnpm"
         elif [ -f "yarn.lock" ]; then
           echo "pm=yarn" >> "$GITHUB_OUTPUT"
-          echo "Detected: yarn"
         elif [ -f "package-lock.json" ]; then
           echo "pm=npm" >> "$GITHUB_OUTPUT"
-          echo "Detected: npm"
         else
-          echo "::error::No lock file found (pnpm-lock.yaml, yarn.lock, package-lock.json)"
+          echo "::error::No lock file found"
           exit 1
         fi
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ inputs.node-version }}
-
-    - name: Enable corepack
-      shell: bash
-      run: |
-        corepack enable
-        case "${{ steps.detect.outputs.pm }}" in
-          pnpm) corepack prepare pnpm@latest --activate ;;
-          yarn) corepack prepare yarn@stable --activate ;;
-        esac
 
     - name: Cache node_modules
       id: cache
@@ -82,7 +60,12 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
-        case "${{ steps.detect.outputs.pm }}" in
+        PM="${{ steps.detect.outputs.pm }}"
+        if ! command -v "$PM" &>/dev/null; then
+          echo "::error::$PM not found. Run github/runtimes first."
+          exit 1
+        fi
+        case "$PM" in
           pnpm) pnpm install --frozen-lockfile ;;
           yarn) yarn install --immutable ;;
           npm)  npm ci ;;
