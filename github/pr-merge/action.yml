@@ -33,6 +33,10 @@ inputs:
     description: "Users/teams to notify on failure (space-separated, e.g. @user1 @org/team)"
     required: false
     default: ""
+  skip-merge-comment:
+    description: "If set, skip merge and post this as a PR comment (notify users are appended). Use for partial failures."
+    required: false
+    default: ""
 
 outputs:
   merged:
@@ -97,9 +101,28 @@ runs:
         echo "::add-mask::$TOKEN"
         echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
 
+    - name: Skip merge (post comment)
+      if: inputs.skip-merge-comment != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        COMMENT: ${{ inputs.skip-merge-comment }}
+        NOTIFY: ${{ inputs.notify }}
+      run: |
+        set -euo pipefail
+
+        BODY="$COMMENT"
+        if [ -n "$NOTIFY" ]; then
+          BODY="$BODY $NOTIFY please review."
+        fi
+
+        gh pr comment "$PR_NUMBER" --body "$BODY"
+        echo "::warning::Merge skipped — $COMMENT"
+
     - name: Wait for checks
       id: wait
-      if: inputs.wait-for-checks != '0'
+      if: inputs.skip-merge-comment == '' && inputs.wait-for-checks != '0'
       shell: bash
       env:
         GH_TOKEN: ${{ steps.token.outputs.token }}
@@ -184,7 +207,7 @@ runs:
 
     - name: Merge PR
       id: merge
-      if: inputs.wait-for-checks == '0' || steps.wait.outputs.checks_passed == 'true'
+      if: inputs.skip-merge-comment == '' && (inputs.wait-for-checks == '0' || steps.wait.outputs.checks_passed == 'true')
       shell: bash
       env:
         GH_TOKEN: ${{ steps.token.outputs.token }}
@@ -207,4 +230,3 @@ runs:
         fi
         echo "::error::Failed to merge PR #$PR_NUMBER: $MERGE_OUTPUT"
         exit 1
-
