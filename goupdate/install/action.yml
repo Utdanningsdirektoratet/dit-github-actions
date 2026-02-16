@@ -28,16 +28,48 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ inputs.repo }}
+        VERSION: ${{ inputs.version }}
       run: |
-        REPO="${{ inputs.repo }}"
-        VERSION="${{ inputs.version }}"
-        [[ "$VERSION" == "latest" ]] && URL="https://api.github.com/repos/$REPO/releases/latest" || URL="https://api.github.com/repos/$REPO/releases/tags/$VERSION"
+        set -euo pipefail
+
+        if [[ "$VERSION" == "latest" ]]; then
+          URL="https://api.github.com/repos/$REPO/releases/latest"
+        else
+          URL="https://api.github.com/repos/$REPO/releases/tags/$VERSION"
+        fi
 
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-        ARCH=$(uname -m); [[ "$ARCH" == "x86_64" ]] && ARCH="amd64"; [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+        ARCH=$(uname -m)
+        [[ "$ARCH" == "x86_64" ]] && ARCH="amd64"
+        [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
 
-        DOWNLOAD_URL=$(curl -sL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} "$URL" | grep "browser_download_url.*${OS}_${ARCH}" | head -1 | cut -d '"' -f 4)
-        curl -sL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} "$DOWNLOAD_URL" | tar xzf - -C /usr/local/bin goupdate
+        AUTH_HEADER=()
+        if [ -n "${GITHUB_TOKEN:-}" ]; then
+          echo "::add-mask::$GITHUB_TOKEN"
+          AUTH_HEADER=(-H "Authorization: Bearer $GITHUB_TOKEN")
+        fi
 
-        echo "version=$(goupdate version | grep Version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-        goupdate version
+        DOWNLOAD_URL=$(curl -sL "${AUTH_HEADER[@]}" "$URL" | grep "browser_download_url.*${OS}_${ARCH}" | head -1 | cut -d '"' -f 4)
+
+        if [ -z "$DOWNLOAD_URL" ]; then
+          echo "::error::No release asset found for ${OS}_${ARCH} (version: $VERSION)"
+          exit 1
+        fi
+
+        curl -sL "${AUTH_HEADER[@]}" "$DOWNLOAD_URL" | tar xzf - -C /usr/local/bin goupdate
+
+        if ! command -v goupdate &>/dev/null; then
+          echo "::error::goupdate binary not found after install"
+          exit 1
+        fi
+
+        INSTALLED=$(goupdate version | grep Version | awk '{print $2}')
+        echo "version=$INSTALLED" >> "$GITHUB_OUTPUT"
+
+        {
+          echo "## GoUpdate - Install"
+          echo ""
+          echo "- **Version:** $INSTALLED"
+          echo "- **Platform:** ${OS}/${ARCH}"
+        } >> "$GITHUB_STEP_SUMMARY"

@@ -26,8 +26,10 @@ runs:
       id: detect
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        PM: ${{ inputs.package-manager }}
       run: |
-        PM="${{ inputs.package-manager }}"
+        set -euo pipefail
 
         if [ -n "$PM" ]; then
           if [[ ! "$PM" =~ ^(npm|yarn|pnpm)$ ]]; then
@@ -50,17 +52,20 @@ runs:
       id: cache
       uses: actions/cache@v4
       with:
-        path: |
-          ${{ inputs.working-directory }}/node_modules
-          ${{ inputs.working-directory }}/**/node_modules
+        path: ${{ inputs.working-directory }}/node_modules
         key: ${{ runner.os }}-node_modules-${{ steps.detect.outputs.pm }}-${{ hashFiles(format('{0}/*-lock.*', inputs.working-directory), format('{0}/yarn.lock', inputs.working-directory)) }}
+        restore-keys: |
+          ${{ runner.os }}-node_modules-${{ steps.detect.outputs.pm }}-
 
     - name: Install dependencies
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        PM: ${{ steps.detect.outputs.pm }}
       run: |
-        PM="${{ steps.detect.outputs.pm }}"
+        set -euo pipefail
+
         if ! command -v "$PM" &>/dev/null; then
           echo "::error::$PM not found. Run github/runtimes first."
           exit 1
@@ -70,3 +75,4 @@ runs:
           yarn) yarn install --immutable ;;
           npm)  npm ci ;;
         esac
+

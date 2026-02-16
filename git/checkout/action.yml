@@ -1,0 +1,78 @@
+name: "Git - Checkout"
+description: "Create or checkout an existing branch from a source branch"
+
+inputs:
+  branch:
+    description: "Branch name (supports template variables: {date})"
+    required: true
+  source-branch:
+    description: "Source branch to create from or fast-forward merge"
+    required: true
+  auto-ff:
+    description: "Attempt fast-forward merge from source branch on existing branches"
+    required: false
+    default: "true"
+  create-branch:
+    description: "Create branch from source if it does not exist"
+    required: false
+    default: "true"
+
+outputs:
+  branch-name:
+    description: "Resolved branch name"
+    value: ${{ steps.checkout.outputs.branch_name }}
+  branch-exists:
+    description: "Whether the branch already existed on the remote"
+    value: ${{ steps.checkout.outputs.branch_exists }}
+  diverged:
+    description: "Whether the branch diverged from source (ff-merge failed)"
+    value: ${{ steps.checkout.outputs.diverged }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout branch
+      id: checkout
+      shell: bash
+      env:
+        BRANCH_TEMPLATE: ${{ inputs.branch }}
+        SOURCE_BRANCH: ${{ inputs.source-branch }}
+        AUTO_FF: ${{ inputs.auto-ff }}
+        CREATE_BRANCH: ${{ inputs.create-branch }}
+      run: |
+        set -euo pipefail
+
+        DATE=$(date -u +%Y-%m-%d)
+
+        BRANCH_NAME="$BRANCH_TEMPLATE"
+        BRANCH_NAME=$(echo "$BRANCH_NAME" | sed "s/{date}/$DATE/g")
+
+        echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+        git fetch origin "$SOURCE_BRANCH" "$BRANCH_NAME" 2>/dev/null || git fetch origin "$SOURCE_BRANCH"
+
+        if git rev-parse --verify "origin/$BRANCH_NAME" >/dev/null 2>&1; then
+          echo "branch_exists=true" >> "$GITHUB_OUTPUT"
+          echo "Continuing existing branch..."
+          git checkout -B "$BRANCH_NAME" "origin/$BRANCH_NAME"
+
+          if [[ "$AUTO_FF" == "true" ]]; then
+            if ! git merge "origin/$SOURCE_BRANCH" --ff-only 2>/dev/null; then
+              echo "diverged=true" >> "$GITHUB_OUTPUT"
+              echo "::warning::Could not fast-forward merge from $SOURCE_BRANCH. Branch has diverged."
+            else
+              echo "diverged=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "diverged=false" >> "$GITHUB_OUTPUT"
+          fi
+        elif [[ "$CREATE_BRANCH" == "true" ]]; then
+          echo "branch_exists=false" >> "$GITHUB_OUTPUT"
+          echo "Creating new branch..."
+          git checkout -B "$BRANCH_NAME" "origin/$SOURCE_BRANCH"
+          echo "diverged=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "branch_exists=false" >> "$GITHUB_OUTPUT"
+          echo "Branch does not exist and create-branch is disabled, staying on $SOURCE_BRANCH"
+          echo "diverged=false" >> "$GITHUB_OUTPUT"
+        fi

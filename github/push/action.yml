@@ -1,0 +1,108 @@
+name: "GitHub - Push"
+description: "Push changes to remote. Uses GitHub App token (triggers workflows) or fallback token."
+
+inputs:
+  app-id:
+    description: "GitHub App ID (if provided with app-private-key, uses App token which triggers workflows)"
+    required: false
+    default: ""
+  app-private-key:
+    description: "GitHub App private key"
+    required: false
+    default: ""
+  github-token:
+    description: "GitHub token (fallback, does not trigger workflows)"
+    required: false
+    default: ""
+  branch:
+    description: "Branch to push"
+    required: true
+
+outputs:
+  pushed:
+    description: "Whether changes were pushed"
+    value: ${{ steps.push.outputs.pushed }}
+  sha:
+    description: "SHA of the pushed commit"
+    value: ${{ steps.push.outputs.sha }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      id: validate
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app-id }}
+        APP_PRIVATE_KEY: ${{ inputs.app-private-key }}
+        GH_TOKEN_INPUT: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        if [ -n "$APP_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+          echo "auth=app" >> "$GITHUB_OUTPUT"
+        elif [ -n "$GH_TOKEN_INPUT" ]; then
+          echo "auth=token" >> "$GITHUB_OUTPUT"
+        else
+          echo "::error::Either app-id + app-private-key or github-token must be provided"
+          exit 1
+        fi
+
+    - name: Generate app token
+      id: app-token
+      if: steps.validate.outputs.auth == 'app'
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+
+    - name: Set token
+      id: token
+      shell: bash
+      env:
+        APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        GH_TOKEN_INPUT: ${{ inputs.github-token }}
+        AUTH: ${{ steps.validate.outputs.auth }}
+      run: |
+        set -euo pipefail
+
+        if [ "$AUTH" = "app" ]; then
+          TOKEN="$APP_TOKEN"
+        else
+          TOKEN="$GH_TOKEN_INPUT"
+        fi
+
+        echo "::add-mask::$TOKEN"
+        echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+    - name: Push changes
+      id: push
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        BRANCH: ${{ inputs.branch }}
+      run: |
+        set -euo pipefail
+
+        # Clear any credentials persisted by actions/checkout to avoid conflicts
+        git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+
+        gh auth setup-git
+
+        git fetch origin "$BRANCH" 2>/dev/null || true
+
+        LOCAL_SHA=$(git rev-parse HEAD)
+        REMOTE_SHA=$(git rev-parse "origin/$BRANCH" 2>/dev/null || echo "")
+
+        if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
+          echo "pushed=false" >> "$GITHUB_OUTPUT"
+          echo "sha=$LOCAL_SHA" >> "$GITHUB_OUTPUT"
+          echo "No new commits to push"
+          exit 0
+        fi
+
+        git push -u origin "$BRANCH"
+
+        echo "pushed=true" >> "$GITHUB_OUTPUT"
+        echo "sha=$LOCAL_SHA" >> "$GITHUB_OUTPUT"
+        echo "Pushed to $BRANCH ($LOCAL_SHA)"

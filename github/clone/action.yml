@@ -1,0 +1,129 @@
+name: "GitHub - Clone"
+description: "Clone a repository. Uses GitHub App token or fallback token for auth."
+
+inputs:
+  repository:
+    description: "Repository to clone (owner/repo)"
+    required: true
+  path:
+    description: "Directory to clone into"
+    required: true
+  ref:
+    description: "Branch, tag, or SHA to checkout"
+    required: false
+    default: ""
+  depth:
+    description: "Clone depth (0 = full history)"
+    required: false
+    default: "1"
+  app-id:
+    description: "GitHub App ID (if provided with app-private-key, uses App token)"
+    required: false
+    default: ""
+  app-private-key:
+    description: "GitHub App private key"
+    required: false
+    default: ""
+  github-token:
+    description: "GitHub token (fallback)"
+    required: false
+    default: ""
+
+outputs:
+  sha:
+    description: "SHA of the cloned commit"
+    value: ${{ steps.clone.outputs.sha }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Normalize repository
+      id: repo
+      shell: bash
+      env:
+        REPOSITORY: ${{ inputs.repository }}
+      run: |
+        set -euo pipefail
+
+        REPO="$REPOSITORY"
+        REPO="${REPO#https://github.com/}"
+        REPO="${REPO%.git}"
+
+        echo "name=$REPO" >> "$GITHUB_OUTPUT"
+        echo "owner=${REPO%%/*}" >> "$GITHUB_OUTPUT"
+        echo "short-name=${REPO#*/}" >> "$GITHUB_OUTPUT"
+
+    - name: Validate inputs
+      id: validate
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app-id }}
+        APP_PRIVATE_KEY: ${{ inputs.app-private-key }}
+        GH_TOKEN_INPUT: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        if [ -n "$APP_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+          echo "auth=app" >> "$GITHUB_OUTPUT"
+        elif [ -n "$GH_TOKEN_INPUT" ]; then
+          echo "auth=token" >> "$GITHUB_OUTPUT"
+        else
+          echo "auth=none" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Generate app token
+      id: app-token
+      if: steps.validate.outputs.auth == 'app'
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+
+    - name: Set token
+      id: token
+      shell: bash
+      env:
+        APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        GH_TOKEN_INPUT: ${{ inputs.github-token }}
+        AUTH: ${{ steps.validate.outputs.auth }}
+      run: |
+        set -euo pipefail
+
+        if [ "$AUTH" = "app" ]; then
+          TOKEN="$APP_TOKEN"
+        elif [ "$AUTH" = "token" ]; then
+          TOKEN="$GH_TOKEN_INPUT"
+        else
+          TOKEN=""
+        fi
+
+        if [ -n "$TOKEN" ]; then
+          echo "::add-mask::$TOKEN"
+        fi
+        echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+    - name: Clone repository
+      id: clone
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        REPO: ${{ steps.repo.outputs.name }}
+        CLONE_PATH: ${{ inputs.path }}
+        REF: ${{ inputs.ref }}
+        DEPTH: ${{ inputs.depth }}
+      run: |
+        set -euo pipefail
+
+        GIT_ARGS=()
+        [ "$DEPTH" != "0" ] && GIT_ARGS+=(--depth "$DEPTH")
+        [ -n "$REF" ] && GIT_ARGS+=(--branch "$REF")
+
+        if [ -n "$GH_TOKEN" ]; then
+          gh repo clone "$REPO" "$CLONE_PATH" -- "${GIT_ARGS[@]}"
+        else
+          git clone "${GIT_ARGS[@]}" "https://github.com/${REPO}.git" "$CLONE_PATH"
+        fi
+
+        SHA=$(git -C "$CLONE_PATH" rev-parse HEAD)
+        echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+        echo "Cloned $REPO at $SHA"

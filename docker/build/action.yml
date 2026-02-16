@@ -67,11 +67,13 @@ runs:
     - name: Resolve tags
       id: tags
       shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE: ${{ inputs.image }}
+        TAG: ${{ inputs.tag }}
+        TAG_LATEST: ${{ inputs.tag-latest }}
       run: |
-        REGISTRY="${{ inputs.registry }}"
-        IMAGE="${{ inputs.image }}"
-        TAG="${{ inputs.tag }}"
-        TAG_LATEST="${{ inputs.tag-latest }}"
+        set -euo pipefail
 
         TAGS=""
         if [ -n "$TAG" ]; then
@@ -132,14 +134,31 @@ runs:
     - name: Set outputs
       id: result
       shell: bash
+      env:
+        DIGEST_OUT: ${{ steps.digest.outputs.digest }}
+        TAGGED_OUT: ${{ steps.tagged.outputs.digest }}
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE: ${{ inputs.image }}
+        TAG: ${{ inputs.tag }}
+        TAG_LATEST: ${{ inputs.tag-latest }}
+        PUSH_DIGEST: ${{ inputs.push-by-digest }}
       run: |
-        DIGEST="${{ steps.digest.outputs.digest || steps.tagged.outputs.digest }}"
+        set -euo pipefail
+
+        DIGEST="${DIGEST_OUT:-$TAGGED_OUT}"
+
+        if [ -z "$DIGEST" ]; then
+          echo "::error::Build produced no digest"
+          exit 1
+        fi
+
         echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
-        if [ "${{ inputs.push-by-digest }}" == "true" ]; then
-          echo "image_ref=${{ inputs.registry }}/${{ inputs.image }}@$DIGEST" >> "$GITHUB_OUTPUT"
-        elif [ -n "${{ inputs.tag }}" ]; then
-          echo "image_ref=${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+        if [ "$PUSH_DIGEST" == "true" ]; then
+          echo "image_ref=${REGISTRY}/${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
+        elif [ -n "$TAG" ]; then
+          echo "image_ref=${REGISTRY}/${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
         else
-          echo "image_ref=${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.tag-latest }}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${REGISTRY}/${IMAGE}:${TAG_LATEST}" >> "$GITHUB_OUTPUT"
         fi
+

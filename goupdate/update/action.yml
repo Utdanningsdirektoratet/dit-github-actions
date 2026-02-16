@@ -1,103 +1,70 @@
 name: "GoUpdate - Update"
-description: "Apply dependency updates and create or update branch"
+description: "Apply dependency updates (does not handle branch setup or commits — use git/checkout and git/commit)"
 
 inputs:
   update-type:
     description: "Update type (major, minor, patch)"
     required: false
     default: "minor"
-  base-branch:
-    description: "Base branch for updates"
-    required: true
-  branch-prefix:
-    description: "Prefix for update branch"
-    required: false
-    default: "goupdate"
-  commit-message:
-    description: "Commit message template ({type} and {date} placeholders)"
-    required: false
-    default: "GoUpdate: {type} update ({date})"
 
 outputs:
   has-changes:
-    description: "Whether any changes were made"
-    value: ${{ steps.commit.outputs.has_changes }}
-  branch-name:
-    description: "Name of the update branch"
-    value: ${{ steps.branch.outputs.branch_name }}
+    description: "Whether any changes were produced"
+    value: ${{ steps.results.outputs.has_changes }}
+  partial-failure:
+    description: "Whether some updates failed (true if exit code != 0 but changes exist)"
+    value: ${{ steps.results.outputs.partial_failure }}
 
 runs:
   using: "composite"
   steps:
-    - name: Setup branch
-      id: branch
-      shell: bash
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-
-        BRANCH_NAME="${{ inputs.branch-prefix }}/auto-update-${{ inputs.update-type }}"
-        echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
-
-        git fetch origin "${{ inputs.base-branch }}" "$BRANCH_NAME" 2>/dev/null || git fetch origin "${{ inputs.base-branch }}"
-
-        if git rev-parse --verify "origin/$BRANCH_NAME" >/dev/null 2>&1; then
-          echo "Continuing existing branch..."
-          git checkout -B "$BRANCH_NAME" "origin/$BRANCH_NAME"
-          
-          if ! git merge "origin/${{ inputs.base-branch }}" --ff-only 2>/dev/null; then
-            echo "::warning::Could not fast-forward merge from ${{ inputs.base-branch }}. Continuing with updates..."
-          fi
-        else
-          echo "Creating new branch..."
-          git checkout -B "$BRANCH_NAME" "origin/${{ inputs.base-branch }}"
-        fi
-
     - name: Apply updates
       id: update
       shell: bash
       env:
-        BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
-        BASE_BRANCH: ${{ inputs.base-branch }}
         UPDATE_TYPE: ${{ inputs.update-type }}
       run: |
-        set -o pipefail
-        goupdate update --$UPDATE_TYPE -y --continue-on-fail 2>&1 | tee /tmp/goupdate-output.txt
-        EXIT_CODE=$?
+        set -uo pipefail
 
-        REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+        goupdate update --"$UPDATE_TYPE" -y --continue-on-fail 2>&1 | tee /tmp/goupdate-output.txt
+        EXIT_CODE=${PIPESTATUS[0]}
+
+        echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
 
         {
-          echo "## GoUpdate - $UPDATE_TYPE updates"
+          echo "## GoUpdate - $UPDATE_TYPE"
           echo ""
-          echo "- **Base:** [\`$BASE_BRANCH\`]($REPO_URL/tree/$BASE_BRANCH)"
-          echo "- **Branch:** [\`$BRANCH_NAME\`]($REPO_URL/tree/$BRANCH_NAME)"
-          echo "- **Compare:** [View changes]($REPO_URL/compare/$BASE_BRANCH...$BRANCH_NAME)"
-          echo ""
-          echo "### Output"
           echo '```'
           cat /tmp/goupdate-output.txt
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
 
-        exit $EXIT_CODE
-
-    - name: Commit and push
-      id: commit
+    - name: Check results
+      id: results
       shell: bash
+      env:
+        UPDATE_EXIT_CODE: ${{ steps.update.outputs.exit_code }}
       run: |
-        if git diff --quiet && git diff --cached --quiet; then
+        set -euo pipefail
+
+        if [ -z "$(git status --porcelain)" ]; then
           echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          echo "No changes to commit"
+          echo "partial_failure=false" >> "$GITHUB_OUTPUT"
+
+          if [ "$UPDATE_EXIT_CODE" != "0" ]; then
+            echo "::error::All updates failed with no changes produced. Check goupdate output above."
+            exit 1
+          fi
+
+          echo "No changes detected"
           exit 0
         fi
 
         echo "has_changes=true" >> "$GITHUB_OUTPUT"
 
-        DATE=$(date -u +%Y-%m-%d)
-        TYPE=$(echo "${{ inputs.update-type }}" | sed 's/\b\(.\)/\u\1/')
-        COMMIT_MSG=$(echo "${{ inputs.commit-message }}" | sed "s/{date}/$DATE/g" | sed "s/{type}/$TYPE/g")
-
-        git add -A
-        git commit -m "$COMMIT_MSG"
-        git push -u origin "${{ steps.branch.outputs.branch_name }}" --force-with-lease
+        if [ "$UPDATE_EXIT_CODE" != "0" ]; then
+          echo "partial_failure=true" >> "$GITHUB_OUTPUT"
+          echo "::warning::Some updates failed (exit code $UPDATE_EXIT_CODE) but changes exist"
+        else
+          echo "partial_failure=false" >> "$GITHUB_OUTPUT"
+        fi

@@ -1,0 +1,210 @@
+name: "GitHub - PR Merge"
+description: "Wait for checks and merge a pull request"
+
+inputs:
+  app-id:
+    description: "GitHub App ID"
+    required: false
+    default: ""
+  app-private-key:
+    description: "GitHub App private key"
+    required: false
+    default: ""
+  github-token:
+    description: "GitHub token (fallback when GitHub App not provided)"
+    required: false
+    default: ""
+  pr-number:
+    description: "PR number to merge"
+    required: true
+  merge-method:
+    description: "Merge method (squash, merge, rebase)"
+    required: false
+    default: "squash"
+  wait-for-checks:
+    description: "Wait for checks to pass (seconds, 0 to disable)"
+    required: false
+    default: "300"
+  check-interval:
+    description: "Seconds between check polls"
+    required: false
+    default: "15"
+  notify:
+    description: "Users/teams to notify on failure (space-separated, e.g. @user1 @org/team)"
+    required: false
+    default: ""
+
+outputs:
+  merged:
+    description: "Whether PR was merged"
+    value: ${{ steps.merge.outputs.merged }}
+  checks-passed:
+    description: "Whether checks passed"
+    value: ${{ steps.wait.outputs.checks_passed }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      id: validate
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app-id }}
+        APP_PRIVATE_KEY: ${{ inputs.app-private-key }}
+        GH_TOKEN_INPUT: ${{ inputs.github-token }}
+        MERGE_METHOD: ${{ inputs.merge-method }}
+      run: |
+        set -euo pipefail
+
+        if [ -n "$APP_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+          echo "auth=app" >> "$GITHUB_OUTPUT"
+        elif [ -n "$GH_TOKEN_INPUT" ]; then
+          echo "auth=token" >> "$GITHUB_OUTPUT"
+        else
+          echo "::error::Either app-id + app-private-key or github-token must be provided"
+          exit 1
+        fi
+
+        if [[ ! "$MERGE_METHOD" =~ ^(squash|merge|rebase)$ ]]; then
+          echo "::error::Invalid merge method: $MERGE_METHOD (must be squash, merge, or rebase)"
+          exit 1
+        fi
+
+    - name: Generate app token
+      id: app-token
+      if: steps.validate.outputs.auth == 'app'
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+
+    - name: Set token
+      id: token
+      shell: bash
+      env:
+        APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        GH_TOKEN_INPUT: ${{ inputs.github-token }}
+        AUTH: ${{ steps.validate.outputs.auth }}
+      run: |
+        set -euo pipefail
+
+        if [ "$AUTH" = "app" ]; then
+          TOKEN="$APP_TOKEN"
+        else
+          TOKEN="$GH_TOKEN_INPUT"
+        fi
+
+        echo "::add-mask::$TOKEN"
+        echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+    - name: Wait for checks
+      id: wait
+      if: inputs.wait-for-checks != '0'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        TIMEOUT_SECS: ${{ inputs.wait-for-checks }}
+        INTERVAL: ${{ inputs.check-interval }}
+        NOTIFY: ${{ inputs.notify }}
+      run: |
+        set -euo pipefail
+
+        echo "Waiting up to ${TIMEOUT_SECS}s for checks to pass (polling every ${INTERVAL}s)..."
+        ELAPSED=0
+
+        while [ $ELAPSED -lt $TIMEOUT_SECS ]; do
+          STATE=$(gh pr view "$PR_NUMBER" --json state -q '.state')
+
+          if [ "$STATE" != "OPEN" ]; then
+            echo "checks_passed=false" >> "$GITHUB_OUTPUT"
+            if [ -n "$NOTIFY" ]; then
+              gh pr comment "$PR_NUMBER" --body "PR is no longer open (state: $STATE). $NOTIFY please review."
+              echo "::error::PR is no longer open (state: $STATE), notified $NOTIFY"
+            else
+              echo "::error::PR is no longer open (state: $STATE)"
+            fi
+            exit 1
+          fi
+
+          CHECKS_JSON=$(gh pr checks "$PR_NUMBER" --json state,name 2>&1) || {
+            if echo "$CHECKS_JSON" | grep -qi "no checks"; then
+              echo "checks_passed=true" >> "$GITHUB_OUTPUT"
+              echo "No checks required, continuing"
+              exit 0
+            fi
+            echo "checks_passed=false" >> "$GITHUB_OUTPUT"
+            if [ -n "$NOTIFY" ]; then
+              COMMENT_BODY=$(printf 'Failed to get check status for PR #%s. %s please review.\n\n```\n%s\n```' "$PR_NUMBER" "$NOTIFY" "$CHECKS_JSON")
+              gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
+              echo "::error::Failed to get check status, notified $NOTIFY: $CHECKS_JSON"
+            else
+              echo "::error::Failed to get check status: $CHECKS_JSON"
+            fi
+            exit 1
+          }
+
+          STATES=$(echo "$CHECKS_JSON" | jq -r '[.[].state] | unique | .[]')
+          echo "Check states: $STATES"
+
+          if echo "$STATES" | grep -qE "^(FAILURE|ERROR)$"; then
+            echo "checks_passed=false" >> "$GITHUB_OUTPUT"
+            FAILED_CHECKS=$(echo "$CHECKS_JSON" | jq -r '.[] | select(.state == "FAILURE" or .state == "ERROR") | .name' | head -5)
+            echo "Failed checks: $FAILED_CHECKS"
+
+            if [ -n "$NOTIFY" ]; then
+              gh pr comment "$PR_NUMBER" --body "Checks failed. $NOTIFY please review."
+              echo "::error::Checks failed, notified $NOTIFY"
+            else
+              echo "::error::Checks failed"
+            fi
+            exit 1
+          fi
+
+          if ! echo "$STATES" | grep -qE "^(PENDING|IN_PROGRESS|QUEUED|WAITING)$"; then
+            echo "checks_passed=true" >> "$GITHUB_OUTPUT"
+            echo "All checks passed"
+            exit 0
+          fi
+
+          sleep "$INTERVAL"
+          ELAPSED=$((ELAPSED + INTERVAL))
+          echo "Waiting... (${ELAPSED}s/${TIMEOUT_SECS}s)"
+        done
+
+        echo "checks_passed=false" >> "$GITHUB_OUTPUT"
+
+        if [ -n "$NOTIFY" ]; then
+          gh pr comment "$PR_NUMBER" --body "Checks timed out after ${TIMEOUT_SECS}s. $NOTIFY please review."
+          echo "::error::Timeout waiting for checks, notified $NOTIFY"
+        else
+          echo "::error::Timeout waiting for checks"
+        fi
+        exit 1
+
+    - name: Merge PR
+      id: merge
+      if: inputs.wait-for-checks == '0' || steps.wait.outputs.checks_passed == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        MERGE_METHOD: ${{ inputs.merge-method }}
+        NOTIFY: ${{ inputs.notify }}
+      run: |
+        set -euo pipefail
+
+        MERGE_OUTPUT=$(gh pr merge "$PR_NUMBER" "--$MERGE_METHOD" --delete-branch 2>&1) && {
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        echo "merged=false" >> "$GITHUB_OUTPUT"
+
+        if [ -n "$NOTIFY" ]; then
+          COMMENT_BODY=$(printf 'Failed to merge PR #%s. %s please review.\n\n```\n%s\n```' "$PR_NUMBER" "$NOTIFY" "$MERGE_OUTPUT")
+          gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
+        fi
+        echo "::error::Failed to merge PR #$PR_NUMBER: $MERGE_OUTPUT"
+        exit 1
+

@@ -1,0 +1,80 @@
+name: "JS - Playwright"
+description: "Install Playwright browsers with caching"
+
+inputs:
+  working-directory:
+    description: "Directory containing package.json with Playwright"
+    required: false
+    default: "."
+  browsers:
+    description: "Browsers to install (space-separated: chromium firefox webkit). Empty = all project browsers."
+    required: false
+    default: ""
+
+outputs:
+  playwright-version:
+    description: "Installed Playwright version"
+    value: ${{ steps.version.outputs.version }}
+  cache-hit:
+    description: "Whether browser cache was hit"
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get Playwright version
+      id: version
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+
+        VERSION=$(npx playwright --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+
+        if [ -z "$VERSION" ]; then
+          echo "::error::Playwright not found. Run js/install or install dependencies first."
+          exit 1
+        fi
+
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Playwright version: $VERSION"
+
+    - name: Cache Playwright browsers
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ steps.version.outputs.version }}-${{ inputs.browsers }}
+        restore-keys: |
+          ${{ runner.os }}-playwright-${{ steps.version.outputs.version }}-
+
+    - name: Install Playwright browsers
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BROWSERS: ${{ inputs.browsers }}
+      run: |
+        set -euo pipefail
+
+        if [ -n "$BROWSERS" ]; then
+          npx playwright install --with-deps $BROWSERS
+        else
+          npx playwright install --with-deps
+        fi
+
+    - name: Install system dependencies
+      if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BROWSERS: ${{ inputs.browsers }}
+      run: |
+        set -euo pipefail
+
+        if [ -n "$BROWSERS" ]; then
+          npx playwright install-deps $BROWSERS
+        else
+          npx playwright install-deps
+        fi
+

@@ -50,32 +50,50 @@ runs:
     - name: Tag image
       id: tag
       shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE: ${{ inputs.image }}
+        DIGEST: ${{ inputs.digest }}
+        TAG: ${{ inputs.tag }}
+        TAG_LATEST: ${{ inputs.tag-latest }}
+        SHORT_SHA: ${{ github.sha }}
       run: |
-        REGISTRY="${{ inputs.registry }}"
-        IMAGE="${{ inputs.image }}"
-        DIGEST="${{ inputs.digest }}"
-        TAG="${{ inputs.tag }}"
-        TAG_LATEST="${{ inputs.tag-latest }}"
-        SHORT_SHA="${GITHUB_SHA:0:7}"
+        set -euo pipefail
 
+        SHORT_SHA="${SHORT_SHA:0:7}"
         [ -z "$TAG" ] && TAG="$(date -u '+%y%m%d-%H%M%S')_${SHORT_SHA}"
 
         echo "tag=$TAG" >> "$GITHUB_OUTPUT"
         echo "image_ref=${REGISTRY}/${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
 
-        docker buildx imagetools create \
-          --tag ${REGISTRY}/${IMAGE}:${TAG} \
-          ${REGISTRY}/${IMAGE}@${DIGEST} &
+        PIDS=()
 
         docker buildx imagetools create \
-          --tag ${REGISTRY}/${IMAGE}:${SHORT_SHA} \
-          ${REGISTRY}/${IMAGE}@${DIGEST} &
+          --tag "${REGISTRY}/${IMAGE}:${TAG}" \
+          "${REGISTRY}/${IMAGE}@${DIGEST}" &
+        PIDS+=($!)
+
+        docker buildx imagetools create \
+          --tag "${REGISTRY}/${IMAGE}:${SHORT_SHA}" \
+          "${REGISTRY}/${IMAGE}@${DIGEST}" &
+        PIDS+=($!)
 
         if [ -n "$TAG_LATEST" ]; then
           docker buildx imagetools create \
-            --tag ${REGISTRY}/${IMAGE}:${TAG_LATEST} \
-            ${REGISTRY}/${IMAGE}@${DIGEST} &
+            --tag "${REGISTRY}/${IMAGE}:${TAG_LATEST}" \
+            "${REGISTRY}/${IMAGE}@${DIGEST}" &
+          PIDS+=($!)
         fi
 
-        wait
-        echo "Tagged: $TAG, $SHORT_SHA, $TAG_LATEST"
+        FAILED=0
+        for PID in "${PIDS[@]}"; do
+          if ! wait "$PID"; then
+            FAILED=$((FAILED + 1))
+          fi
+        done
+
+        if [ "$FAILED" -gt 0 ]; then
+          echo "::error::$FAILED tagging operation(s) failed"
+          exit 1
+        fi
+

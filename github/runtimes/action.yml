@@ -1,5 +1,5 @@
 name: "GitHub - Runtimes"
-description: "Setup language runtimes for dependency scanning"
+description: "Setup language runtimes"
 
 inputs:
   node-version:
@@ -39,10 +39,10 @@ runs:
     - name: Setup Node.js package managers
       if: inputs.node-version != ''
       shell: bash
+      env:
+        PMS: ${{ inputs.node-pms }}
       run: |
         corepack enable
-
-        PMS="${{ inputs.node-pms }}"
 
         if echo "$PMS" | grep -q "pnpm"; then
           echo "Installing pnpm..."

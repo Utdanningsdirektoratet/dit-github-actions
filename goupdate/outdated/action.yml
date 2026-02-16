@@ -32,6 +32,8 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
+        set -euo pipefail
+
         OUTPUT=$(goupdate outdated --output json)
 
         TOTAL=$(echo "$OUTPUT" | jq '.summary.total_packages // 0')
@@ -52,12 +54,12 @@ runs:
           echo "- **Total packages:** $TOTAL"
           echo "- **Outdated:** $OUTDATED (major: $MAJOR, minor: $MINOR, patch: $PATCH)"
           echo ""
-          
+
           MAJOR_PKGS=$(echo "$OUTPUT" | jq -r '.packages[] | select(.major != "#N/A") | "- `\(.name)`"')
           MINOR_PKGS=$(echo "$OUTPUT" | jq -r '.packages[] | select(.minor != "#N/A") | "- `\(.name)`"')
           PATCH_PKGS=$(echo "$OUTPUT" | jq -r '.packages[] | select(.patch != "#N/A") | "- `\(.name)`"')
           UPTODATE_PKGS=$(echo "$OUTPUT" | jq -r '.packages[] | select(.status == "UpToDate") | "- `\(.name)`"')
-          
+
           if [ -n "$MAJOR_PKGS" ]; then
             echo "### Major"
             echo "$MAJOR_PKGS"

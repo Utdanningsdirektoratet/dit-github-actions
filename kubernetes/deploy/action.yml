@@ -15,20 +15,58 @@ inputs:
     description: "Full image reference (registry/image:tag)"
     required: true
 
+outputs:
+  status:
+    description: "Deploy status (success, failed)"
+    value: ${{ steps.deploy.outputs.status }}
+
 runs:
   using: "composite"
   steps:
     - uses: azure/setup-kubectl@v3
 
-    - name: Deploy
+    - name: Setup kubeconfig
+      id: kubeconfig
       shell: bash
+      env:
+        KUBE_CONFIG_B64: ${{ inputs.kube-config }}
       run: |
-        echo "${{ inputs.kube-config }}" | base64 -d > /tmp/kubeconfig
-        export KUBECONFIG=/tmp/kubeconfig
+        set -euo pipefail
 
-        echo "Deploying: ${{ inputs.image }}"
-        kubectl set image deployment/${{ inputs.deployment }} \
-          ${{ inputs.deployment }}=${{ inputs.image }} \
-          -n ${{ inputs.namespace }}
+        KUBECONFIG_FILE=$(mktemp /tmp/kubeconfig-XXXXXX)
+        echo "::add-mask::$KUBECONFIG_FILE"
+        echo "path=$KUBECONFIG_FILE" >> "$GITHUB_OUTPUT"
 
-        rm -f /tmp/kubeconfig
+        echo "$KUBE_CONFIG_B64" | base64 -d > "$KUBECONFIG_FILE"
+        chmod 600 "$KUBECONFIG_FILE"
+
+    - name: Deploy
+      id: deploy
+      shell: bash
+      env:
+        KUBECONFIG: ${{ steps.kubeconfig.outputs.path }}
+        NAMESPACE: ${{ inputs.namespace }}
+        DEPLOYMENT: ${{ inputs.deployment }}
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+
+        echo "Deploying: $IMAGE"
+
+        if kubectl set image "deployment/$DEPLOYMENT" \
+          "$DEPLOYMENT=$IMAGE" \
+          -n "$NAMESPACE"; then
+          echo "status=success" >> "$GITHUB_OUTPUT"
+        else
+          echo "status=failed" >> "$GITHUB_OUTPUT"
+          echo "::error::Failed to set image on deployment/$DEPLOYMENT"
+          exit 1
+        fi
+
+    - name: Cleanup kubeconfig
+      if: always()
+      shell: bash
+      env:
+        KUBECONFIG_FILE: ${{ steps.kubeconfig.outputs.path }}
+      run: rm -f "$KUBECONFIG_FILE"
+
