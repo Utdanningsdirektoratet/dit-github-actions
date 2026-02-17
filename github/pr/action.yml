@@ -129,3 +129,15 @@ runs:
           echo "created=true" >> "$GITHUB_OUTPUT"
         fi
 
+        {
+          echo "## GitHub - PR"
+          echo ""
+          echo "* **PR:** [#$PR_NUMBER]($PR_URL)"
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          echo "* **Base:** [\`$BASE\`](${REPO_URL}/tree/${BASE}) **<-** **Head:** [\`$HEAD\`](${REPO_URL}/tree/${HEAD})"
+          if [ -n "$EXISTING" ]; then
+            echo "* **Status:** Updated"
+          else
+            echo "* **Status:** Created"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"

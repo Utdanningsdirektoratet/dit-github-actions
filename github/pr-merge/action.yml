@@ -239,3 +239,47 @@ runs:
         fi
         echo "::error::Failed to merge PR #$PR_NUMBER: $MERGE_OUTPUT"
         exit 1
+
+    - name: Summary
+      if: always()
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+        MERGE_METHOD: ${{ inputs.merge-method }}
+        CHECKS_PASSED: ${{ steps.wait.outputs.checks_passed }}
+        MERGED: ${{ steps.merge.outputs.merged }}
+        WAIT_FOR_CHECKS: ${{ inputs.wait-for-checks }}
+        SKIP_COMMENT: ${{ inputs.skip-merge-comment }}
+      run: |
+        set -euo pipefail
+
+        {
+          echo "## GitHub - PR Merge"
+          echo ""
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          PR_URL="${REPO_URL}/pull/${PR_NUMBER}"
+          CHECKS_URL="${PR_URL}/checks"
+
+          echo "* **PR:** [#$PR_NUMBER]($PR_URL)"
+
+          if [ -n "$SKIP_COMMENT" ]; then
+            echo "* **Status:** Skipped"
+            echo "* **Reason:** $SKIP_COMMENT"
+          else
+            if [ "$WAIT_FOR_CHECKS" = "0" ]; then
+              echo "* **Checks:** Skipped"
+            elif [ "$CHECKS_PASSED" = "true" ]; then
+              echo "* **Checks:** [Passed]($CHECKS_URL)"
+            else
+              echo "* **Checks:** [Failed]($CHECKS_URL)"
+            fi
+
+            if [ "$MERGED" = "true" ]; then
+              echo "* **Merged:** Yes ($MERGE_METHOD)"
+            elif [ "$MERGED" = "false" ]; then
+              echo "* **Merged:** Failed"
+            else
+              echo "* **Merged:** No (checks did not pass)"
+            fi
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
