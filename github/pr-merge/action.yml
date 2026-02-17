@@ -133,8 +133,11 @@ runs:
       run: |
         set -euo pipefail
 
-        echo "Waiting up to ${TIMEOUT_SECS}s for checks to pass (polling every ${INTERVAL}s)..."
+        # This prevents a race condition where checks haven't been registered yet
+        MIN_WAIT=30
         ELAPSED=0
+
+        echo "Waiting up to ${TIMEOUT_SECS}s for checks to pass (polling every ${INTERVAL}s, grace period ${MIN_WAIT}s)..."
 
         while [ $ELAPSED -lt $TIMEOUT_SECS ]; do
           STATE=$(gh pr view "$PR_NUMBER" --json state -q '.state')
@@ -152,9 +155,15 @@ runs:
 
           CHECKS_JSON=$(gh pr checks "$PR_NUMBER" --json state,name 2>&1) || {
             if echo "$CHECKS_JSON" | grep -qi "no checks"; then
-              echo "checks_passed=true" >> "$GITHUB_OUTPUT"
-              echo "No checks required, continuing"
-              exit 0
+              if [ $ELAPSED -ge $MIN_WAIT ]; then
+                echo "checks_passed=true" >> "$GITHUB_OUTPUT"
+                echo "No checks required after ${ELAPSED}s grace period, continuing"
+                exit 0
+              fi
+              echo "No checks yet, waiting for checks to be registered... (${ELAPSED}s/${TIMEOUT_SECS}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+              continue
             fi
             echo "checks_passed=false" >> "$GITHUB_OUTPUT"
             if [ -n "$NOTIFY" ]; then
