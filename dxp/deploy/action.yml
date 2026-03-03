@@ -1,0 +1,226 @@
+name: 'DXP Deploy'
+description: 'Deploy, complete, or reset an Optimizely DXP deployment'
+
+inputs:
+  action:
+    description: 'Action to perform: deploy, complete, or reset'
+    required: true
+  target-environment:
+    description: 'Target DXP environment: Integration, Preproduction, or Production'
+    required: true
+  project-id:
+    description: 'Optimizely DXP Project ID'
+    required: true
+  client-key:
+    description: 'Optimizely DXP API Client Key'
+    required: true
+  client-secret:
+    description: 'Optimizely DXP API Client Secret'
+    required: true
+  package-name:
+    description: 'Package file name for deploy action (e.g. app.cms.app.1.0.0.nupkg)'
+    required: false
+    default: ''
+  direct-deploy:
+    description: 'Use direct deploy without slot verification (Integration only)'
+    required: false
+    default: 'false'
+
+outputs:
+  deployment-id:
+    description: 'The deployment ID'
+    value: ${{ steps.run.outputs.deployment-id }}
+  status:
+    description: 'Deployment status after action'
+    value: ${{ steps.run.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Mask secrets
+      shell: bash
+      env:
+        CLIENT_KEY: ${{ inputs.client-key }}
+        CLIENT_SECRET: ${{ inputs.client-secret }}
+        PROJECT_ID: ${{ inputs.project-id }}
+      run: |
+        if [ -n "$CLIENT_KEY" ]; then
+          echo "::add-mask::$CLIENT_KEY"
+        fi
+        if [ -n "$CLIENT_SECRET" ]; then
+          echo "::add-mask::$CLIENT_SECRET"
+        fi
+        if [ -n "$PROJECT_ID" ]; then
+          echo "::add-mask::$PROJECT_ID"
+        fi
+
+    - name: Install EpiCloud module
+      shell: pwsh
+      run: |
+        if (-not (Get-Module -ListAvailable -Name EpiCloud)) {
+          Install-Module -Name EpiCloud -Scope CurrentUser -Force
+        }
+        Import-Module EpiCloud
+
+    - name: '${{ inputs.action }}: ${{ inputs.target-environment }}'
+      id: run
+      shell: pwsh
+      env:
+        DXP_PROJECT_ID: ${{ inputs.project-id }}
+        DXP_CLIENT_KEY: ${{ inputs.client-key }}
+        DXP_CLIENT_SECRET: ${{ inputs.client-secret }}
+        DXP_ACTION: ${{ inputs.action }}
+        DXP_TARGET_ENV: ${{ inputs.target-environment }}
+        DXP_PACKAGE_NAME: ${{ inputs.package-name }}
+        DXP_DIRECT_DEPLOY: ${{ inputs.direct-deploy }}
+      run: |
+        Import-Module EpiCloud
+
+        Connect-EpiCloud -ProjectId $env:DXP_PROJECT_ID -ClientKey $env:DXP_CLIENT_KEY -ClientSecret $env:DXP_CLIENT_SECRET
+
+        $action = $env:DXP_ACTION
+        $targetEnv = $env:DXP_TARGET_ENV
+
+        switch ($action) {
+          "deploy" {
+            # Clear any existing deployment that would block this one
+            $existing = Get-EpiDeployment | Where-Object {
+              $_.parameters.targetEnvironment -eq $targetEnv -and
+              $_.status -in @("InProgress", "AwaitingVerification", "Completing", "Resetting")
+            } | Select-Object -First 1
+
+            if ($existing) {
+              Write-Host "::warning::Found existing deployment $($existing.id) with status '$($existing.status)', clearing first..."
+
+              # InProgress: wait for it to reach a state we can act on
+              if ($existing.status -eq "InProgress") {
+                Write-Host "Deployment is in progress, waiting for it to finish..."
+                do {
+                  Start-Sleep -Seconds 15
+                  $existing = Get-EpiDeployment -Id $existing.id
+                  Write-Host "  status: $($existing.status) ($($existing.percentComplete)%)"
+                } while ($existing.status -eq "InProgress")
+              }
+
+              # Completing: wait for the slot swap to finish (will reach Succeeded or Failed)
+              if ($existing.status -eq "Completing") {
+                Write-Host "Deployment is completing (slot swap), waiting..."
+                do {
+                  Start-Sleep -Seconds 15
+                  $existing = Get-EpiDeployment -Id $existing.id
+                  Write-Host "  status: $($existing.status)"
+                } while ($existing.status -eq "Completing")
+              }
+
+              # Resetting: wait for the reset to finish
+              if ($existing.status -eq "Resetting") {
+                Write-Host "Deployment is already resetting, waiting..."
+                do {
+                  Start-Sleep -Seconds 10
+                  $existing = Get-EpiDeployment -Id $existing.id
+                } while ($existing.status -eq "Resetting")
+              }
+
+              # AwaitingVerification: reset it so we can start fresh
+              if ($existing.status -eq "AwaitingVerification") {
+                Write-Host "Resetting deployment $($existing.id)..."
+                Reset-EpiDeployment -Id $existing.id -Wait
+              }
+
+              Write-Host "Existing deployment cleared (final status: $($existing.status))"
+            }
+
+            # Build deployment parameters
+            $params = @{
+              DeploymentPackage = $env:DXP_PACKAGE_NAME
+              TargetEnvironment = $targetEnv
+              Wait              = $true
+            }
+
+            if ($env:DXP_DIRECT_DEPLOY -eq "true") {
+              $params.DirectDeploy = $true
+            }
+
+            Write-Host "Starting deployment to $targetEnv with package $($params.DeploymentPackage)..."
+            $deploy = Start-EpiDeployment @params
+
+            Write-Host "Deployment ID: $($deploy.id)"
+            Write-Host "Deployment status: $($deploy.status)"
+            "deployment-id=$($deploy.id)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+            "status=$($deploy.status)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+          }
+
+          "complete" {
+            $deployment = Get-EpiDeployment | Where-Object {
+              $_.parameters.targetEnvironment -eq $targetEnv -and
+              $_.status -eq "AwaitingVerification"
+            } | Select-Object -First 1
+
+            if (-not $deployment) {
+              throw "No deployment found in AwaitingVerification state for environment: $targetEnv"
+            }
+
+            Write-Host "Completing deployment $($deployment.id) for $targetEnv..."
+            Complete-EpiDeployment -Id $deployment.id -Wait
+
+            Write-Host "Deployment completed successfully"
+            "deployment-id=$($deployment.id)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+            "status=completed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+          }
+
+          "reset" {
+            $deployment = Get-EpiDeployment | Where-Object {
+              $_.parameters.targetEnvironment -eq $targetEnv -and
+              $_.status -eq "AwaitingVerification"
+            } | Select-Object -First 1
+
+            if (-not $deployment) {
+              Write-Host "No deployment in AwaitingVerification state for $targetEnv, nothing to reset"
+              "status=skipped" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+              return
+            }
+
+            Write-Host "Resetting deployment $($deployment.id) for $targetEnv..."
+            Reset-EpiDeployment -Id $deployment.id -Wait
+
+            Write-Host "Deployment reset successfully"
+            "deployment-id=$($deployment.id)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+            "status=reset" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+          }
+
+          default {
+            throw "Unknown action: $action. Must be 'deploy', 'complete', or 'reset'."
+          }
+        }
+
+    - name: Summary
+      if: always()
+      shell: bash
+      env:
+        ACTION: ${{ inputs.action }}
+        TARGET_ENV: ${{ inputs.target-environment }}
+        PACKAGE_NAME: ${{ inputs.package-name }}
+        DEPLOYMENT_ID: ${{ steps.run.outputs.deployment-id }}
+        DEPLOY_STATUS: ${{ steps.run.outputs.status }}
+        STEP_STATUS: ${{ steps.run.outcome }}
+      run: |
+        if [ "$STEP_STATUS" = "success" ]; then
+          ICON=":white_check_mark:"
+        else
+          ICON=":x:"
+        fi
+
+        echo "### ${ICON} DXP: ${ACTION} → ${TARGET_ENV}" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Action:** \`${ACTION}\`" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Environment:** ${TARGET_ENV}" >> "$GITHUB_STEP_SUMMARY"
+
+        if [ -n "$PACKAGE_NAME" ]; then
+          echo "- **Package:** \`${PACKAGE_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        if [ -n "$DEPLOYMENT_ID" ]; then
+          echo "- **Deployment ID:** \`${DEPLOYMENT_ID}\`" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        echo "- **Status:** ${DEPLOY_STATUS:-${STEP_STATUS}}" >> "$GITHUB_STEP_SUMMARY"

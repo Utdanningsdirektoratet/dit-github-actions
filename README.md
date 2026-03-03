@@ -2,53 +2,80 @@
 
 Shared composite actions for CI/CD at [Utdanningsdirektoratet](https://github.com/Utdanningsdirektoratet) DIT.
 
-```
+```yaml
 - uses: Utdanningsdirektoratet/dit-github-actions/{action}@v1
 ```
 
-| Action | Purpose |
-|--------|---------|
-| [`docker/build`](#dockerbuild) | Build & push image with registry caching |
-| [`docker/tag`](#dockertag) | Tag image by digest (parallel) |
-| [`git/checkout`](#gitcheckout) | Create or checkout branch from source |
-| [`git/commit`](#gitcommit) | Stage and commit all changes |
-| [`github/pr`](#githubpr) | Create or find a pull request |
-| [`github/pr-merge`](#githubpr-merge) | Wait for checks and merge a PR |
-| [`github/push`](#githubpush) | Push with GitHub App or token |
-| [`github/runtimes`](#githubruntimes) | Setup Node/Python/Go/PHP/.NET |
-| [`goupdate/*`](#goupdate) | Dependency scanning & updates |
-| [`js/install`](#jsinstall) | Install & cache Node.js deps |
-| [`js/playwright`](#jsplaywright) | Playwright browser setup with caching |
-| [`kubernetes/deploy`](#kubernetesdeploy) | Set image on deployment |
-| [`kubernetes/rollout`](#kubernetesrollout) | Wait for rollout + auto-rollback |
+**Git:** [`git/checkout`](#gitcheckout), [`git/commit`](#gitcommit)
 
-## Architecture
+**GitHub:** [`github/runtimes`](#githubruntimes), [`github/clone`](#githubclone), [`github/push`](#githubpush), [`github/pr`](#githubpr), [`github/pr-merge`](#githubpr-merge)
 
-```mermaid
-flowchart LR
-    subgraph Build
-        docker/build --> docker/tag
-    end
-    subgraph Deploy
-        kubernetes/deploy --> kubernetes/rollout
-    end
-    subgraph "Dependency Updates"
-        goupdate/install --> goupdate/scan & goupdate/outdated & goupdate/update
-    end
-    subgraph Git
-        git/checkout --> git/commit --> github/push
-        github/pr --> github/pr-merge
-    end
-    Build --> Deploy
-    goupdate/update --> git/commit
-```
+**GoUpdate:** [`goupdate/install`](#goupdateinstall), [`goupdate/scan`](#goupdatescan), [`goupdate/outdated`](#goupdateoutdated), [`goupdate/update`](#goupdateupdate)
+
+**JavaScript:** [`js/install`](#jsinstall), [`js/lint`](#jslint), [`js/playwright`](#jsplaywright)
+
+**DotNet:** [`dotnet/install`](#dotnetinstall), [`dotnet/build`](#dotnetbuild)
+
+**Docker:** [`docker/build`](#dockerbuild), [`docker/tag`](#dockertag)
+
+**Kubernetes:** [`kubernetes/deploy`](#kubernetesdeploy), [`kubernetes/rollout`](#kubernetesrollout)
+
+**DXP:** [`dxp/upload`](#dxpupload), [`dxp/deploy`](#dxpdeploy)
 
 ## Examples
 
 <details>
-<summary><b>Build, Tag, Deploy</b></summary>
+<summary><b>Build and lint a Node.js project</b></summary>
 
 ```yaml
+name: CI
+on: [pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Utdanningsdirektoratet/dit-github-actions/js/lint@v1
+        with:
+          node-version: "22"
+          lint-command: "lint"
+```
+
+</details>
+
+<details>
+<summary><b>E2E tests with Playwright</b></summary>
+
+```yaml
+name: E2E Tests
+on: [pull_request]
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Utdanningsdirektoratet/dit-github-actions/github/runtimes@v1
+        with:
+          node-version: "22"
+          node-pms: "pnpm"
+      - uses: Utdanningsdirektoratet/dit-github-actions/js/install@v1
+      - uses: Utdanningsdirektoratet/dit-github-actions/js/playwright@v1
+        with:
+          browsers: "chromium firefox webkit"
+      - run: pnpm test:e2e
+```
+
+</details>
+
+<details>
+<summary><b>Docker build, tag, and deploy to Kubernetes</b></summary>
+
+```yaml
+name: Deploy
+on:
+  push:
+    branches: [main]
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -96,7 +123,7 @@ jobs:
 </details>
 
 <details>
-<summary><b>Automated dependency updates</b></summary>
+<summary><b>Automated dependency updates with GoUpdate</b></summary>
 
 ```yaml
 name: Dependency Updates
@@ -158,25 +185,71 @@ jobs:
 </details>
 
 <details>
-<summary><b>E2E tests with Playwright</b></summary>
+<summary><b>DXP deploy</b></summary>
 
 ```yaml
-name: E2E Tests
-on: [pull_request]
+name: DXP Deploy
+on:
+  push:
+    branches: [main]
+
 jobs:
-  e2e:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      package-name: ${{ steps.package.outputs.package-name }}
     steps:
       - uses: actions/checkout@v4
       - uses: Utdanningsdirektoratet/dit-github-actions/github/runtimes@v1
         with:
-          node-version: "22"
-          node-pms: "pnpm"
-      - uses: Utdanningsdirektoratet/dit-github-actions/js/install@v1
-      - uses: Utdanningsdirektoratet/dit-github-actions/js/playwright@v1
+          dotnet-version: '8.0.x'
+
+      - uses: Utdanningsdirektoratet/dit-github-actions/dotnet/install@v1
+
+      - id: package
+        uses: Utdanningsdirektoratet/dit-github-actions/dotnet/build@v1
         with:
-          browsers: "chromium"
-      - run: pnpm test:e2e
+          app-name: myapp
+
+      - uses: Utdanningsdirektoratet/dit-github-actions/dxp/upload@v1
+        with:
+          package-path: ${{ steps.package.outputs.package-path }}
+          project-id: ${{ secrets.DXP_PROJECT_ID }}
+          client-key: ${{ secrets.DXP_CLIENT_KEY }}
+          client-secret: ${{ secrets.DXP_CLIENT_SECRET }}
+
+      - uses: Utdanningsdirektoratet/dit-github-actions/dxp/deploy@v1
+        with:
+          action: deploy
+          target-environment: Integration
+          package-name: ${{ steps.package.outputs.package-name }}
+          project-id: ${{ secrets.DXP_PROJECT_ID }}
+          client-key: ${{ secrets.DXP_CLIENT_KEY }}
+          client-secret: ${{ secrets.DXP_CLIENT_SECRET }}
+          direct-deploy: 'true'
+```
+
+</details>
+
+<details>
+<summary><b>Clone another repo and use its contents</b></summary>
+
+```yaml
+name: Sync Config
+on: [workflow_dispatch]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Utdanningsdirektoratet/dit-github-actions/github/clone@v1
+        with:
+          repository: Utdanningsdirektoratet/shared-config
+          path: ./config
+          ref: main
+          app-id: ${{ secrets.APP_ID }}
+          app-private-key: ${{ secrets.APP_KEY }}
+      - run: cat ./config/settings.json
 ```
 
 </details>
@@ -185,246 +258,64 @@ jobs:
 
 ## Action Reference
 
-### `docker/build`
+### Git
 
-Build and push a Docker image with registry-based layer caching. Supports tagged pushes and digest-only pushes for multi-environment workflows.
+#### `git/checkout`
 
-> [!TIP]
-> Use `push-by-digest: "true"` when the same build should be tagged differently per environment, then follow up with `docker/tag`.
+Create or checkout a branch from a source branch. If the branch exists, optionally fast-forward merges from source.
 
-<details>
-<summary>Inputs / Outputs</summary>
-
-**Inputs**
-
-| Input | Required | Default | Description |
-|-------|:--------:|---------|-------------|
-| `registry` | yes | | Registry host |
-| `username` | yes | | Registry username |
-| `password` | yes | | Registry password/token |
-| `image` | yes | | Image name (no registry prefix) |
-| `tag` | | `""` | Version tag |
-| `tag-latest` | | `latest` | Rolling environment tag |
-| `push-by-digest` | | `false` | Push by digest only |
-| `context` | | `.` | Build context path |
-| `dockerfile` | | `{context}/Dockerfile` | Dockerfile path |
-| `platforms` | | `linux/amd64` | Target platforms |
-| `build-args` | | `""` | Multiline `KEY=VALUE` |
-
-**Outputs:** `digest`, `image-ref`
-
-</details>
-
-<details>
-<summary>Caching strategy</summary>
-
-Uses two registry-based cache sources: a dedicated `buildcache` tag with `mode=max` (all layers), and the rolling `tag-latest` as fallback. This ensures fast hits even when the dedicated cache is evicted.
-
-</details>
-
----
-
-### `docker/tag`
-
-Tag an existing image by digest. Runs operations in parallel — creates version tag, short SHA tag, and rolling latest simultaneously.
-
-<details>
-<summary>Inputs / Outputs</summary>
-
-**Inputs**
-
-| Input | Required | Default | Description |
-|-------|:--------:|---------|-------------|
-| `registry` | yes | | Registry host |
-| `username` | yes | | Registry username |
-| `password` | yes | | Registry password |
-| `image` | yes | | Image name |
-| `digest` | yes | | Digest to tag (`sha256:...`) |
-| `tag` | | auto | Version tag (auto: `YYMMDD-HHMMSS_<sha>`) |
-| `tag-latest` | | `latest` | Rolling environment tag |
-
-**Outputs:** `tag`, `image-ref`
-
-</details>
-
----
-
-### `git/checkout`
-
-Create or checkout an existing branch from a source branch. If the branch exists, optionally fast-forward merge from source.
-
-**Template variables** — the `branch` input supports: `{date}` (YYYY-MM-DD).
+**Template variables** — `branch` supports: `{date}` (YYYY-MM-DD).
 
 ```yaml
-# Input
-branch: "updates/{date}"
-# Resolved → updates/2026-02-11
+- uses: Utdanningsdirektoratet/dit-github-actions/git/checkout@v1
+  id: branch
+  with:
+    branch: "updates/{date}"        # resolves → updates/2026-02-22
+    source-branch: main
 ```
 
-<details>
-<summary>Inputs / Outputs</summary>
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `branch` | yes | | Branch name (`{date}` template supported) | `goupdate/auto-update-minor` |
+| `source-branch` | yes | | Source branch to create from or ff-merge | `main` |
+| `auto-ff` | | `true` | Fast-forward merge from source on existing branches | `true` |
+| `create-branch` | | `true` | Create branch from source if missing | `true` |
 
-**Inputs**
-
-| Input | Required | Default | Description |
-|-------|:--------:|---------|-------------|
-| `branch` | yes | | Branch name (template variables: `{date}`) |
-| `source-branch` | yes | | Source branch to create from or ff-merge |
-| `auto-ff` | | `true` | Fast-forward merge from source on existing branches |
-| `create-branch` | | `true` | Create branch from source if it does not exist |
-
-**Outputs:** `branch-name` (resolved), `branch-exists`, `diverged`
-
-</details>
+| Output | Description | Example |
+|--------|-------------|---------|
+| `branch-name` | Resolved branch name | `updates/2026-02-22` |
+| `branch-exists` | Whether branch already existed | `true` |
+| `diverged` | Whether branch diverged from source | `false` |
 
 ---
 
-### `git/commit`
+#### `git/commit`
 
 Stage and commit all changes.
 
-**Template variables** — the `message` input supports: `{date}` (YYYY-MM-DD), `{branch}` (current branch).
+**Template variables** — `message` supports: `{date}` (YYYY-MM-DD), `{branch}` (current branch).
 
 ```yaml
-# Input
-message: "GoUpdate: minor update ({date}) on {branch}"
-# Resolved → GoUpdate: minor update (2026-02-11) on goupdate/auto-update-minor
+- uses: Utdanningsdirektoratet/dit-github-actions/git/commit@v1
+  with:
+    message: "GoUpdate: minor update ({date})"  # resolves → GoUpdate: minor update (2026-02-22)
 ```
 
-<details>
-<summary>Inputs / Outputs</summary>
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `message` | | `GoUpdate: Update` | Commit message (`{date}`, `{branch}` templates) | `"chore: update deps ({date})"` |
+| `git-user-name` | | `github-actions[bot]` | Commit author name | `my-bot` |
+| `git-user-email` | | `github-actions[bot]@users.noreply.github.com` | Commit author email | `bot@example.com` |
 
-**Inputs**
-
-| Input | Required | Default | Description |
-|-------|:--------:|---------|-------------|
-| `message` | | `GoUpdate: Update` | Commit message (template variables: `{date}`, `{branch}`) |
-| `git-user-name` | | `github-actions[bot]` | Commit author name |
-| `git-user-email` | | `...@users.noreply.github.com` | Commit author email |
-
-**Outputs:** `has-changes`
-
-</details>
+| Output | Description | Example |
+|--------|-------------|---------|
+| `has-changes` | Whether any changes were committed | `true` |
 
 ---
 
-### `github/pr`
+### GitHub
 
-Create, find, or update a pull request. If a PR already exists for the same head/base, its title and body are updated with resolved template variables. Accepts GitHub App or token for authentication.
-
-**Template variables** — the `title` and `body` inputs support: `{date}` (YYYY-MM-DD), `{base}` (base branch), `{head}` (head branch).
-
-```yaml
-# Input
-title: "GoUpdate: minor update ({date})"
-body: "Merging `{head}` into `{base}`"
-# Resolved → GoUpdate: minor update (2026-02-11)
-# Resolved → Merging `goupdate/auto-update-minor` into `main`
-```
-
-```mermaid
-flowchart TD
-    A[Validate + token] --> B{PR exists?}
-    B -->|No| C[Create PR]
-    B -->|Yes| D[Update title + body]
-```
-
-<details>
-<summary>Inputs / Outputs</summary>
-
-**Inputs**
-
-| Input | Required | Default | Description |
-|-------|:--------:|---------|-------------|
-| `app-id` | | `""` | GitHub App ID |
-| `app-private-key` | | `""` | GitHub App private key |
-| `github-token` | | `""` | Fallback token |
-| `title` | yes | | PR title (template variables: `{date}`, `{base}`, `{head}`) |
-| `body` | | `""` | PR body (template variables: `{date}`, `{base}`, `{head}`) |
-| `base` | yes | | Base branch |
-| `head` | yes | | Head branch |
-
-**Outputs:** `pr-number`, `pr-url`, `created`
-
-</details>
-
-<details>
-<summary>Authentication</summary>
-
-Provide either `app-id` + `app-private-key` (GitHub App) **or** `github-token`. GitHub App is recommended when the PR needs to trigger workflows or merge through branch protection.
-
-</details>
-
----
-
-### `github/pr-merge`
-
-Wait for checks and merge a pull request. Separated from `github/pr` for composability — use independently or chain after PR creation.
-
-```mermaid
-flowchart TD
-    A[Validate + token] --> B{wait-for-checks?}
-    B -->|Yes| C[Poll checks]
-    C -->|Pass| D[Merge + delete branch]
-    C -->|Fail/Timeout| E[Notify + fail]
-    B -->|No| D
-```
-
-<details>
-<summary>Inputs / Outputs</summary>
-
-**Inputs**
-
-| Input | Required | Default | Description |
-|-------|:--------:|---------|-------------|
-| `app-id` | | `""` | GitHub App ID |
-| `app-private-key` | | `""` | GitHub App private key |
-| `github-token` | | `""` | Fallback token |
-| `pr-number` | yes | | PR number to merge |
-| `merge-method` | | `squash` | `squash` / `merge` / `rebase` |
-| `wait-for-checks` | | `300` | Timeout seconds (0 = disable) |
-| `check-interval` | | `15` | Poll interval seconds |
-| `notify` | | `""` | Users/teams to ping on failure |
-
-**Outputs:** `merged`, `checks-passed`
-
-</details>
-
----
-
-### `github/push`
-
-Push commits with optional GitHub App token to trigger downstream workflows. Auto-detects auth method from provided credentials.
-
-> [!IMPORTANT]
-> Credentials are cleaned up in an `if: always()` step, even on failure.
-
-<details>
-<summary>Inputs / Outputs</summary>
-
-**Inputs**
-
-| Input | Required | Default | Description |
-|-------|:--------:|---------|-------------|
-| `app-id` | | `""` | GitHub App ID (triggers workflows) |
-| `app-private-key` | | `""` | GitHub App private key |
-| `github-token` | | `""` | Fallback token (no workflow trigger) |
-| `branch` | yes | | Branch to push |
-
-**Outputs:** `pushed`, `sha`
-
-</details>
-
-<details>
-<summary>Authentication</summary>
-
-Provide either `app-id` + `app-private-key` (GitHub App, triggers workflows) **or** `github-token` (no workflow trigger). The action auto-detects which to use based on the provided credentials.
-
-</details>
-
----
-
-### `github/runtimes`
+#### `github/runtimes`
 
 Setup language runtimes. All inputs opt-in — only specified runtimes are installed.
 
@@ -433,189 +324,562 @@ Setup language runtimes. All inputs opt-in — only specified runtimes are insta
   with:
     node-version: "22"
     node-pms: "pnpm"
-    python-version: "3.12"
 ```
 
-<details>
-<summary>Inputs</summary>
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `node-version` | `""` | Node.js version |
-| `node-pms` | `""` | Package managers (`npm,yarn,pnpm`) |
-| `php-version` | `""` | PHP version |
-| `python-version` | `""` | Python version |
-| `go-version` | `""` | Go version |
-| `dotnet-version` | `""` | .NET version |
-
-</details>
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `node-version` | | `""` | Node.js version | `"22"` |
+| `node-pms` | | `""` | Package managers (comma-separated) | `"pnpm"`, `"npm,yarn"` |
+| `php-version` | | `""` | PHP version | `"8.3"` |
+| `python-version` | | `""` | Python version | `"3.12"` |
+| `go-version` | | `""` | Go version | `"1.22"` |
+| `dotnet-version` | | `""` | .NET version | `"8.0.x"` |
 
 ---
 
-### `goupdate`
+#### `github/clone`
 
-Suite of actions for [goupdate](https://github.com/ajxudir/goupdate) dependency management. Install first, then scan/outdated/update.
+Clone a repository using GitHub App token or fallback token.
 
-| Action | Purpose |
-|--------|---------|
-| `goupdate/install` | Install binary from GitHub releases |
-| `goupdate/scan` | Detect package managers & lock files |
-| `goupdate/outdated` | Check outdated deps with major/minor/patch breakdown |
-| `goupdate/update` | Apply updates (**does not commit or push**) |
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/github/clone@v1
+  with:
+    repository: Utdanningsdirektoratet/shared-config
+    path: ./config
+    ref: main
+    app-id: ${{ secrets.APP_ID }}
+    app-private-key: ${{ secrets.APP_KEY }}
+```
 
-<details>
-<summary>goupdate/install — Inputs / Outputs</summary>
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `repository` | yes | | Repository to clone (`owner/repo`) | `Utdanningsdirektoratet/my-repo` |
+| `path` | yes | | Directory to clone into | `./config` |
+| `ref` | | `""` | Branch, tag, or SHA to checkout | `main`, `v1.0.0` |
+| `depth` | | `1` | Clone depth (`0` = full history) | `1` |
+| `app-id` | | `""` | GitHub App ID | `${{ secrets.APP_ID }}` |
+| `app-private-key` | | `""` | GitHub App private key | `${{ secrets.APP_KEY }}` |
+| `github-token` | | `""` | Fallback token (if no App credentials) | `${{ secrets.GH_TOKEN }}` |
 
-| Input | Default | Description |
-|-------|---------|-------------|
-| `version` | `latest` | Version or tag |
-| `repo` | `ajxudir/goupdate` | GitHub repo |
-| `github-token` | `""` | Avoids API rate limits |
+| Output | Description | Example |
+|--------|-------------|---------|
+| `sha` | SHA of the cloned commit | `abc1234def5678` |
 
-**Outputs:** `version`
-
-</details>
-
-<details>
-<summary>goupdate/scan — Inputs / Outputs</summary>
-
-**Inputs:** `working-directory` (default `.`)
-
-**Outputs:** `package-managers`, `rules` (comma-separated)
-
-</details>
-
-<details>
-<summary>goupdate/outdated — Inputs / Outputs</summary>
-
-**Inputs:** `working-directory` (default `.`)
-
-**Outputs:** `total`, `total-outdated`, `major`, `minor`, `patch`
-
-</details>
-
-<details>
-<summary>goupdate/update — Inputs / Outputs</summary>
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `update-type` | `minor` | `major` / `minor` / `patch` |
-
-**Outputs:** `has-changes`, `partial-failure`
-
-> [!NOTE]
-> Uses `--continue-on-fail` so partial updates still produce changes. If all updates fail (no changes), the action fails. If some succeed, `partial-failure=true` lets the workflow create a PR without auto-merging. Use `git/checkout` and `git/commit` to handle branch setup and commits.
-
-</details>
+> Provide `app-id` + `app-private-key` (GitHub App), `github-token`, or neither (public repos only).
 
 ---
 
-### `js/install`
+#### `github/push`
 
-Install and cache Node.js deps. Auto-detects PM from lock files: `pnpm-lock.yaml` > `yarn.lock` > `package-lock.json`.
+Push commits with optional GitHub App token to trigger downstream workflows.
+
+> [!IMPORTANT]
+> Credentials are cleaned up in an `if: always()` step, even on failure.
+
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/github/push@v1
+  with:
+    app-id: ${{ secrets.APP_ID }}
+    app-private-key: ${{ secrets.APP_KEY }}
+    branch: feature/my-branch
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `app-id` | | `""` | GitHub App ID (triggers workflows) | `${{ secrets.APP_ID }}` |
+| `app-private-key` | | `""` | GitHub App private key | `${{ secrets.APP_KEY }}` |
+| `github-token` | | `""` | Fallback token (no workflow trigger) | `${{ secrets.GH_TOKEN }}` |
+| `branch` | yes | | Branch to push | `goupdate/auto-update-minor` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `pushed` | Whether changes were pushed | `true` |
+| `sha` | SHA of the pushed commit | `abc1234def5678` |
+
+> Use `app-id` + `app-private-key` to trigger workflows. `github-token` pushes silently.
+
+---
+
+#### `github/pr`
+
+Create or update a pull request. If a PR already exists for the same head/base, its title and body are updated.
+
+**Template variables** — `title` and `body` support: `{date}` (YYYY-MM-DD), `{base}`, `{head}`.
+
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/github/pr@v1
+  id: pr
+  with:
+    app-id: ${{ secrets.APP_ID }}
+    app-private-key: ${{ secrets.APP_KEY }}
+    title: "GoUpdate: minor update ({date})"
+    base: main
+    head: goupdate/auto-update-minor
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `app-id` | | `""` | GitHub App ID | `${{ secrets.APP_ID }}` |
+| `app-private-key` | | `""` | GitHub App private key | `${{ secrets.APP_KEY }}` |
+| `github-token` | | `""` | Fallback token | `${{ secrets.GH_TOKEN }}` |
+| `title` | yes | | PR title (`{date}`, `{base}`, `{head}` templates) | `"Update deps ({date})"` |
+| `body` | | `""` | PR body (`{date}`, `{base}`, `{head}` templates) | `"Merging {head} into {base}"` |
+| `base` | yes | | Base branch | `main` |
+| `head` | yes | | Head branch | `goupdate/auto-update-minor` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `pr-number` | PR number | `42` |
+| `pr-url` | PR URL | `https://github.com/org/repo/pull/42` |
+| `created` | Whether a new PR was created | `true` |
+
+---
+
+#### `github/pr-merge`
+
+Wait for checks and merge a pull request. Polls until checks pass (or timeout), then merges and deletes the branch.
+
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/github/pr-merge@v1
+  with:
+    app-id: ${{ secrets.APP_ID }}
+    app-private-key: ${{ secrets.APP_KEY }}
+    pr-number: ${{ steps.pr.outputs.pr-number }}
+    wait-for-checks: "600"
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `app-id` | | `""` | GitHub App ID | `${{ secrets.APP_ID }}` |
+| `app-private-key` | | `""` | GitHub App private key | `${{ secrets.APP_KEY }}` |
+| `github-token` | | `""` | Fallback token | `${{ secrets.GH_TOKEN }}` |
+| `pr-number` | yes | | PR number to merge | `42` |
+| `merge-method` | | `squash` | Merge strategy | `squash`, `merge`, `rebase` |
+| `wait-for-checks` | | `300` | Timeout in seconds (`0` = skip) | `600` |
+| `check-interval` | | `15` | Poll interval in seconds | `15` |
+| `notify` | | `""` | Users/teams to ping on failure | `@myteam` |
+| `skip-merge-comment` | | `""` | If set, skip merge and post this as a PR comment | `"Skipping auto-merge: manual review required"` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `merged` | Whether PR was merged | `true` |
+| `checks-passed` | Whether checks passed | `true` |
+
+---
+
+### GoUpdate
+
+#### `goupdate/install`
+
+Install [goupdate](https://github.com/ajxudir/goupdate) binary from GitHub releases.
+
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/goupdate/install@v1
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `version` | | `latest` | Version or tag | `v1.2.0` |
+| `repo` | | `ajxudir/goupdate` | GitHub repo | `ajxudir/goupdate` |
+| `github-token` | | `""` | Avoids API rate limits | `${{ secrets.GITHUB_TOKEN }}` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `version` | Installed version | `1.2.0` |
+
+---
+
+#### `goupdate/scan`
+
+Detect package managers and lock files in the repository.
+
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/goupdate/scan@v1
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `working-directory` | | `.` | Directory to scan | `./packages/app` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `package-managers` | Detected package managers (comma-separated) | `npm,pip` |
+| `rules` | Detected rules (comma-separated) | `package-lock.json,requirements.txt` |
+
+---
+
+#### `goupdate/outdated`
+
+Check for outdated dependencies with major/minor/patch breakdown.
+
+```yaml
+- id: outdated
+  uses: Utdanningsdirektoratet/dit-github-actions/goupdate/outdated@v1
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `working-directory` | | `.` | Directory to check | `.` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `total` | Total dependencies | `120` |
+| `total-outdated` | Total outdated | `8` |
+| `major` | Major updates available | `2` |
+| `minor` | Minor updates available | `3` |
+| `patch` | Patch updates available | `3` |
+
+---
+
+#### `goupdate/update`
+
+Apply dependency updates. Does **not** commit or push — use [`git/commit`](#gitcommit) and [`github/push`](#githubpush) afterward.
+
+```yaml
+- id: update
+  uses: Utdanningsdirektoratet/dit-github-actions/goupdate/update@v1
+  with:
+    update-type: minor
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `update-type` | | `minor` | Update level | `major`, `minor`, `patch` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `has-changes` | Whether any files changed | `true` |
+| `partial-failure` | Some updates failed but others succeeded | `false` |
+
+> Uses `--continue-on-fail`: if some updates fail but others succeed, `partial-failure=true` lets the workflow create a PR without auto-merging.
+
+---
+
+### JavaScript
+
+#### `js/install`
+
+Install and cache Node.js dependencies. Auto-detects package manager from lock files: `pnpm-lock.yaml` > `yarn.lock` > `package-lock.json`.
 
 > [!WARNING]
-> Does **not** install Node.js. Use `github/runtimes` first.
+> Does **not** install Node.js. Use [`github/runtimes`](#githubruntimes) first.
 
-<details>
-<summary>Inputs / Outputs</summary>
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/github/runtimes@v1
+  with:
+    node-version: "22"
+    node-pms: "pnpm"
+- uses: Utdanningsdirektoratet/dit-github-actions/js/install@v1
+```
 
-| Input | Default | Description |
-|-------|---------|-------------|
-| `working-directory` | `.` | Directory with `package.json` |
-| `package-manager` | auto | Force `npm` / `yarn` / `pnpm` |
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `working-directory` | | `.` | Directory with `package.json` | `./frontend` |
+| `package-manager` | | auto | Force specific PM | `pnpm`, `yarn`, `npm` |
 
-**Outputs:** `package-manager`, `cache-hit`
-
-</details>
+| Output | Description | Example |
+|--------|-------------|---------|
+| `package-manager` | Detected/forced package manager | `pnpm` |
+| `cache-hit` | Whether cache was restored | `true` |
 
 ---
 
-### `js/playwright`
+#### `js/lint`
 
-Install Playwright browsers with caching. Caches browser binaries by Playwright version for fast subsequent runs. Run tests in your workflow directly (e.g. `pnpm test:e2e`).
+Run lint checks. Sets up Node.js, installs dependencies, and runs the lint command automatically.
+
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/js/lint@v1
+  with:
+    node-version: "22"
+    lint-command: "lint"
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `node-version` | | `22` | Node.js version | `"20"` |
+| `working-directory` | | `.` | Directory to run lint in | `./frontend` |
+| `lint-command` | | `lint` | npm script to run | `lint`, `lint:ci` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `package-manager` | Detected package manager | `pnpm` |
+
+---
+
+#### `js/playwright`
+
+Install Playwright browsers with caching. Run tests separately (e.g. `pnpm test:e2e`).
 
 > [!WARNING]
-> Requires Node.js and dependencies installed first. Use `github/runtimes` + `js/install` before this action.
+> Requires Node.js and deps installed first. Use [`github/runtimes`](#githubruntimes) + [`js/install`](#jsinstall) before this action.
 
 ```yaml
 - uses: Utdanningsdirektoratet/dit-github-actions/js/playwright@v1
   with:
-    browsers: "chromium"
+    browsers: "chromium firefox webkit"
 - run: pnpm test:e2e
 ```
 
-<details>
-<summary>Inputs / Outputs</summary>
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `working-directory` | | `.` | Directory with Playwright config | `./e2e` |
+| `browsers` | | `""` | Browsers to install (empty = all) | `"chromium"`, `"chromium firefox webkit"` |
 
-**Inputs**
-
-| Input | Required | Default | Description |
-|-------|:--------:|---------|-------------|
-| `working-directory` | | `.` | Directory with Playwright |
-| `browsers` | | `""` | Browsers to install (empty = all project browsers) |
-
-**Outputs:** `playwright-version`, `cache-hit`
-
-</details>
-
-<details>
-<summary>Caching strategy</summary>
-
-Caches `~/.cache/ms-playwright` keyed by Playwright version and browser selection. When cache hits, only system dependencies are reinstalled (fast). When cache misses, full browser download + system deps are installed.
-
-</details>
+| Output | Description | Example |
+|--------|-------------|---------|
+| `playwright-version` | Installed Playwright version | `1.42.0` |
+| `cache-hit` | Whether browser cache was restored | `true` |
 
 ---
 
-### `kubernetes/deploy`
+### DotNet
+
+#### `dotnet/install`
+
+Restore NuGet packages with caching. Caches `~/.nuget/packages` keyed by `.csproj` and `nuget.config` hashes.
+
+> [!WARNING]
+> Does **not** install .NET SDK. Use [`github/runtimes`](#githubruntimes) first.
+
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/github/runtimes@v1
+  with:
+    dotnet-version: "8.0.x"
+- uses: Utdanningsdirektoratet/dit-github-actions/dotnet/install@v1
+  with:
+    nuget-config: nuget.config
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `working-directory` | | `.` | Directory with solution/project | `./src` |
+| `nuget-config` | | `""` | Path to `nuget.config` | `nuget.config` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `cache-hit` | Whether NuGet cache was restored | `true` |
+
+---
+
+#### `dotnet/build`
+
+Publish .NET project and create an Optimizely DXP deployment package (`.nupkg`).
+
+Package naming: `{app-name}.cms.app.{YYYYMMDD}.{run_number}.nupkg`
+
+```yaml
+- id: package
+  uses: Utdanningsdirektoratet/dit-github-actions/dotnet/build@v1
+  with:
+    app-name: myapp
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `app-name` | yes | | Application name for package | `myapp` |
+| `configuration` | | `Release` | Build configuration | `Release`, `Debug` |
+| `version` | | auto | Package version (default: `YYYYMMDD.{run_number}`) | `1.0.0` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `package-name` | Generated file name | `myapp.cms.app.20260222.42.nupkg` |
+| `package-path` | Full path to the file | `/tmp/myapp.cms.app.20260222.42.nupkg` |
+
+---
+
+### Docker
+
+#### `docker/build`
+
+Build and push a Docker image with registry-based layer caching.
+
+> [!TIP]
+> Use `push-by-digest: "true"` when the same build should be tagged differently per environment, then follow up with [`docker/tag`](#dockertag).
+
+```yaml
+- id: build
+  uses: Utdanningsdirektoratet/dit-github-actions/docker/build@v1
+  with:
+    registry: registry.example.com
+    username: ${{ secrets.REG_USER }}
+    password: ${{ secrets.REG_PASS }}
+    image: myapp
+    push-by-digest: "true"
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `registry` | yes | | Registry host | `registry.example.com` |
+| `username` | yes | | Registry username | `${{ secrets.REG_USER }}` |
+| `password` | yes | | Registry password/token | `${{ secrets.REG_PASS }}` |
+| `image` | yes | | Image name (no registry prefix) | `myapp` |
+| `tag` | | `""` | Version tag | `v1.2.3` |
+| `tag-latest` | | `latest` | Rolling environment tag | `latest-production` |
+| `push-by-digest` | | `false` | Push by digest only (no tag) | `"true"` |
+| `context` | | `.` | Build context path | `./docker` |
+| `dockerfile` | | auto | Dockerfile path (default: `Dockerfile` in context dir) | `./Dockerfile.prod` |
+| `platforms` | | `linux/amd64` | Target platforms | `linux/amd64,linux/arm64` |
+| `build-args` | | `""` | Build arguments (multiline `KEY=VALUE`) | `NODE_ENV=production` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `digest` | Image digest | `sha256:abc123...` |
+| `image-ref` | Full image reference | `registry.example.com/myapp:v1.2.3` |
+
+---
+
+#### `docker/tag`
+
+Tag an existing image by digest. Creates version tag, short SHA tag, and rolling latest in parallel.
+
+```yaml
+- id: tag
+  uses: Utdanningsdirektoratet/dit-github-actions/docker/tag@v1
+  with:
+    registry: registry.example.com
+    username: ${{ secrets.REG_USER }}
+    password: ${{ secrets.REG_PASS }}
+    image: myapp
+    digest: ${{ needs.build.outputs.digest }}
+    tag-latest: latest-production
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `registry` | yes | | Registry host | `registry.example.com` |
+| `username` | yes | | Registry username | `${{ secrets.REG_USER }}` |
+| `password` | yes | | Registry password | `${{ secrets.REG_PASS }}` |
+| `image` | yes | | Image name | `myapp` |
+| `digest` | yes | | Digest to tag | `sha256:abc123...` |
+| `tag` | | auto | Version tag (auto: `YYMMDD-HHMMSS_<sha>`) | `v1.2.3` |
+| `tag-latest` | | `latest` | Rolling environment tag | `latest-production` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `tag` | Applied version tag | `260222-143000_abc1234` |
+| `image-ref` | Full image reference | `registry.example.com/myapp:260222-143000_abc1234` |
+
+---
+
+### Kubernetes
+
+#### `kubernetes/deploy`
 
 Set image on a Kubernetes deployment. Kubeconfig uses `mktemp` with `if: always()` cleanup.
 
-<details>
-<summary>Inputs / Outputs</summary>
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/kubernetes/deploy@v1
+  with:
+    kube-config: ${{ secrets.KUBECONFIG }}
+    namespace: production
+    deployment: myapp
+    image: registry.example.com/myapp:v1.2.3
+```
 
-| Input | Required | Description |
-|-------|:--------:|-------------|
-| `kube-config` | yes | Base64-encoded kubeconfig |
-| `namespace` | yes | Namespace |
-| `deployment` | yes | Deployment name |
-| `image` | yes | Full image reference |
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `kube-config` | yes | | Base64-encoded kubeconfig | `${{ secrets.KUBECONFIG }}` |
+| `namespace` | yes | | Target namespace | `production` |
+| `deployment` | yes | | Deployment name | `myapp` |
+| `image` | yes | | Full image reference | `registry.example.com/myapp:v1.2.3` |
 
-**Outputs:** `status` (`success` / `failed`)
-
-</details>
+| Output | Description | Example |
+|--------|-------------|---------|
+| `status` | Deployment result | `success`, `failed` |
 
 ---
 
-### `kubernetes/rollout`
+#### `kubernetes/rollout`
 
 Wait for rollout with optional auto-rollback on failure.
 
-```mermaid
-flowchart TD
-    A[Wait for rollout] -->|OK| B[status=success]
-    A -->|Failed| C{rollback-on-failure?}
-    C -->|Yes| D[kubectl rollout undo]
-    C -->|No| E[status=failed, exit 1]
-    D -->|OK| F[status=rolled-back, exit 1]
-    D -->|Failed| G[status=failed, exit 2 CRITICAL]
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/kubernetes/rollout@v1
+  with:
+    kube-config: ${{ secrets.KUBECONFIG }}
+    namespace: production
+    deployment: myapp
 ```
 
-<details>
-<summary>Inputs / Outputs</summary>
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `kube-config` | yes | | Base64-encoded kubeconfig | `${{ secrets.KUBECONFIG }}` |
+| `namespace` | yes | | Target namespace | `production` |
+| `deployment` | yes | | Deployment name | `myapp` |
+| `timeout` | | `300` | Timeout in seconds | `600` |
+| `rollback-on-failure` | | `true` | Auto-rollback on failure | `true` |
 
-| Input | Required | Default | Description |
-|-------|:--------:|---------|-------------|
-| `kube-config` | yes | | Base64-encoded kubeconfig |
-| `namespace` | yes | | Namespace |
-| `deployment` | yes | | Deployment name |
-| `timeout` | | `300` | Timeout seconds |
-| `rollback-on-failure` | | `true` | Auto-rollback |
+| Output | Description | Example |
+|--------|-------------|---------|
+| `status` | Rollout result | `success`, `rolled-back`, `failed` |
 
-**Outputs:** `status` (`success` / `rolled-back` / `failed`)
+---
 
-</details>
+### DXP
+
+#### `dxp/upload`
+
+Upload a deployment package to Optimizely DXP blob storage.
+
+> [!IMPORTANT]
+> Credentials are masked with `::add-mask::` and passed via `env:` blocks — never inline.
+
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/dxp/upload@v1
+  with:
+    package-path: ${{ steps.package.outputs.package-path }}
+    project-id: ${{ secrets.DXP_PROJECT_ID }}
+    client-key: ${{ secrets.DXP_CLIENT_KEY }}
+    client-secret: ${{ secrets.DXP_CLIENT_SECRET }}
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `package-path` | yes | | Path to `.nupkg` package | `${{ steps.package.outputs.package-path }}` |
+| `project-id` | yes | | DXP Project ID | `${{ secrets.DXP_PROJECT_ID }}` |
+| `client-key` | yes | | DXP API Client Key | `${{ secrets.DXP_CLIENT_KEY }}` |
+| `client-secret` | yes | | DXP API Client Secret | `${{ secrets.DXP_CLIENT_SECRET }}` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `package-name` | Uploaded package file name | `myapp.cms.app.20260222.42.nupkg` |
+
+---
+
+#### `dxp/deploy`
+
+Deploy, complete, or reset an Optimizely DXP deployment. Automatically resets stuck deployments before starting a new one.
+
+> [!CAUTION]
+> `package-name` is required when `action` is `deploy`.
+
+```yaml
+- uses: Utdanningsdirektoratet/dit-github-actions/dxp/deploy@v1
+  with:
+    action: deploy
+    target-environment: Integration
+    package-name: ${{ steps.package.outputs.package-name }}
+    project-id: ${{ secrets.DXP_PROJECT_ID }}
+    client-key: ${{ secrets.DXP_CLIENT_KEY }}
+    client-secret: ${{ secrets.DXP_CLIENT_SECRET }}
+    direct-deploy: 'true'
+```
+
+| Input | Required | Default | Description | Example |
+|-------|:--------:|---------|-------------|---------|
+| `action` | yes | | Action to perform | `deploy`, `complete`, `reset` |
+| `target-environment` | yes | | Target DXP environment | `Integration`, `Preproduction`, `Production` |
+| `project-id` | yes | | DXP Project ID | `${{ secrets.DXP_PROJECT_ID }}` |
+| `client-key` | yes | | DXP API Client Key | `${{ secrets.DXP_CLIENT_KEY }}` |
+| `client-secret` | yes | | DXP API Client Secret | `${{ secrets.DXP_CLIENT_SECRET }}` |
+| `package-name` | | `""` | Package name (required for `deploy`) | `myapp.cms.app.20260222.42.nupkg` |
+| `direct-deploy` | | `false` | Skip slot verification (Integration) | `"true"` |
+
+| Output | Description | Example |
+|--------|-------------|---------|
+| `deployment-id` | DXP deployment ID | `d-abc123` |
+| `status` | Deployment status | `InProgress`, `AwaitingVerification`, `completed`, `reset`, `skipped` |
 
 ---
 

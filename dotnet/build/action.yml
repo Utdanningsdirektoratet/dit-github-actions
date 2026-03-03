@@ -1,0 +1,73 @@
+name: 'DotNet Build'
+description: 'Publish .NET project and create Optimizely DXP deployment package (.nupkg)'
+
+inputs:
+  configuration:
+    description: 'Build configuration'
+    required: false
+    default: 'Release'
+  app-name:
+    description: 'Application name for package (e.g. dubestemmer)'
+    required: true
+  version:
+    description: 'Package version (default: auto-generated as YYYYMMdd.HHmmss)'
+    required: false
+    default: ''
+
+outputs:
+  package-name:
+    description: 'Generated package file name (e.g. dubestemmer.cms.app.20260218.143022.nupkg)'
+    value: ${{ steps.package.outputs.package-name }}
+  package-path:
+    description: 'Full path to the generated package file'
+    value: ${{ steps.package.outputs.package-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Publish
+      shell: bash
+      env:
+        CONFIGURATION: ${{ inputs.configuration }}
+        PUBLISH_DIR: ${{ runner.temp }}/publish
+      run: dotnet publish DuBestemmer/DuBestemmer.csproj -c "$CONFIGURATION" -o "$PUBLISH_DIR"
+
+    - name: Create deployment package
+      id: package
+      shell: bash
+      env:
+        APP_NAME: ${{ inputs.app-name }}
+        INPUT_VERSION: ${{ inputs.version }}
+        PUBLISH_DIR: ${{ runner.temp }}/publish
+        TEMP_DIR: ${{ runner.temp }}
+      run: |
+        VERSION="$INPUT_VERSION"
+        if [ -z "$VERSION" ]; then
+          VERSION="$(date +'%Y%m%d.%H%M%S')"
+        fi
+
+        PACKAGE_NAME="${APP_NAME}.cms.app.${VERSION}.nupkg"
+        PACKAGE_PATH="${TEMP_DIR}/${PACKAGE_NAME}"
+
+        cd "$PUBLISH_DIR"
+        zip -r "$PACKAGE_PATH" .
+
+        echo "package-name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
+        echo "package-path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
+        echo "Created package: ${PACKAGE_NAME}"
+
+    - name: Summary
+      if: always()
+      shell: bash
+      env:
+        PACKAGE_NAME: ${{ steps.package.outputs.package-name }}
+        STEP_STATUS: ${{ steps.package.outcome }}
+      run: |
+        if [ "$STEP_STATUS" = "success" ]; then
+          echo "### :hammer: Build" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Package:** \`${PACKAGE_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Status:** Built" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "### :x: Build Failed" >> "$GITHUB_STEP_SUMMARY"
+        fi

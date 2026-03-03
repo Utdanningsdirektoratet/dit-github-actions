@@ -1,0 +1,90 @@
+name: 'DXP Upload'
+description: 'Upload deployment package to Optimizely DXP blob storage'
+
+inputs:
+  package-path:
+    description: 'Path to the .nupkg deployment package'
+    required: true
+  project-id:
+    description: 'Optimizely DXP Project ID'
+    required: true
+  client-key:
+    description: 'Optimizely DXP API Client Key'
+    required: true
+  client-secret:
+    description: 'Optimizely DXP API Client Secret'
+    required: true
+
+outputs:
+  package-name:
+    description: 'Uploaded package file name'
+    value: ${{ steps.upload.outputs.package-name }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Mask secrets
+      shell: bash
+      env:
+        CLIENT_KEY: ${{ inputs.client-key }}
+        CLIENT_SECRET: ${{ inputs.client-secret }}
+        PROJECT_ID: ${{ inputs.project-id }}
+      run: |
+        if [ -n "$CLIENT_KEY" ]; then
+          echo "::add-mask::$CLIENT_KEY"
+        fi
+        if [ -n "$CLIENT_SECRET" ]; then
+          echo "::add-mask::$CLIENT_SECRET"
+        fi
+        if [ -n "$PROJECT_ID" ]; then
+          echo "::add-mask::$PROJECT_ID"
+        fi
+
+    - name: Install EpiCloud module
+      shell: pwsh
+      run: |
+        if (-not (Get-Module -ListAvailable -Name EpiCloud)) {
+          Install-Module -Name EpiCloud -Scope CurrentUser -Force
+        }
+        Import-Module EpiCloud
+
+    - name: Upload package to DXP
+      id: upload
+      shell: pwsh
+      env:
+        DXP_PROJECT_ID: ${{ inputs.project-id }}
+        DXP_CLIENT_KEY: ${{ inputs.client-key }}
+        DXP_CLIENT_SECRET: ${{ inputs.client-secret }}
+        PACKAGE_PATH: ${{ inputs.package-path }}
+      run: |
+        Import-Module EpiCloud
+
+        Connect-EpiCloud -ProjectId $env:DXP_PROJECT_ID -ClientKey $env:DXP_CLIENT_KEY -ClientSecret $env:DXP_CLIENT_SECRET
+
+        $packagePath = $env:PACKAGE_PATH
+        $packageName = Split-Path $packagePath -Leaf
+
+        Write-Host "Uploading package: $packageName"
+        $sasLink = Get-EpiDeploymentPackageLocation
+        # Mask the SAS URL so it never appears in logs if an error is thrown
+        Write-Host "::add-mask::$sasLink"
+        Add-EpiDeploymentPackage -SasUrl $sasLink -Path $packagePath
+
+        Write-Host "Package uploaded successfully: $packageName"
+        "package-name=$packageName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+
+    - name: Summary
+      if: always()
+      shell: bash
+      env:
+        PACKAGE_NAME: ${{ steps.upload.outputs.package-name }}
+        STEP_STATUS: ${{ steps.upload.outcome }}
+      run: |
+        if [ "$STEP_STATUS" = "success" ]; then
+          echo "### :package: Package Upload" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Package:** \`${PACKAGE_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Status:** Uploaded" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "### :x: Package Upload Failed" >> "$GITHUB_STEP_SUMMARY"
+        fi
