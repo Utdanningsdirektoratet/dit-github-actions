@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: Utdanningsdirektoratet/dit-github-actions/js/lint@v1
         with:
-          node-version: "22"
+          node-version: "24"
           lint-command: "lint"
 ```
 
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: Utdanningsdirektoratet/dit-github-actions/github/runtimes@v1
         with:
-          node-version: "22"
+          node-version: "24"
           node-pms: "pnpm"
       - uses: Utdanningsdirektoratet/dit-github-actions/js/install@v1
       - uses: Utdanningsdirektoratet/dit-github-actions/js/playwright@v1
@@ -322,13 +322,13 @@ Setup language runtimes. All inputs opt-in — only specified runtimes are insta
 ```yaml
 - uses: Utdanningsdirektoratet/dit-github-actions/github/runtimes@v1
   with:
-    node-version: "22"
+    node-version: "24"
     node-pms: "pnpm"
 ```
 
 | Input            | Required | Default | Description                        | Example                |
 | ---------------- | :------: | ------- | ---------------------------------- | ---------------------- |
-| `node-version`   |          | `""`    | Node.js version                    | `"22"`                 |
+| `node-version`   |          | `""`    | Node.js version                    | `"24"`                 |
 | `node-pms`       |          | `""`    | Package managers (comma-separated) | `"pnpm"`, `"npm,yarn"` |
 | `php-version`    |          | `""`    | PHP version                        | `"8.3"`                |
 | `python-version` |          | `""`    | Python version                     | `"3.12"`               |
@@ -567,7 +567,7 @@ Install and cache Node.js dependencies. Auto-detects package manager from lock f
 ```yaml
 - uses: Utdanningsdirektoratet/dit-github-actions/github/runtimes@v1
   with:
-    node-version: "22"
+    node-version: "24"
     node-pms: "pnpm"
 - uses: Utdanningsdirektoratet/dit-github-actions/js/install@v1
 ```
@@ -591,13 +591,13 @@ Run lint checks. Sets up Node.js, installs dependencies, and runs the lint comma
 ```yaml
 - uses: Utdanningsdirektoratet/dit-github-actions/js/lint@v1
   with:
-    node-version: "22"
+    node-version: "24"
     lint-command: "lint"
 ```
 
 | Input               | Required | Default | Description              | Example           |
 | ------------------- | :------: | ------- | ------------------------ | ----------------- |
-| `node-version`      |          | `22`    | Node.js version          | `"20"`            |
+| `node-version`      |          | `24`    | Node.js version          | `"24"`            |
 | `working-directory` |          | `.`     | Directory to run lint in | `./frontend`      |
 | `lint-command`      |          | `lint`  | npm script to run        | `lint`, `lint:ci` |
 
