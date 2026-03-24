@@ -41,7 +41,7 @@ runs:
 
     - name: Cache Playwright browsers
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.cache/ms-playwright
         key: ${{ runner.os }}-playwright-${{ steps.version.outputs.version }}-${{ inputs.browsers }}
@@ -77,4 +77,3 @@ runs:
         else
           npx playwright install-deps
         fi
-

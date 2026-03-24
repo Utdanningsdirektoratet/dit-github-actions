@@ -32,7 +32,7 @@ runs:
   steps:
     - name: Setup Node.js
       if: inputs.node-version != ''
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: ${{ inputs.node-version }}
 
@@ -63,18 +63,18 @@ runs:
 
     - name: Setup Python
       if: inputs.python-version != ''
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ inputs.python-version }}
 
     - name: Setup Go
       if: inputs.go-version != ''
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: ${{ inputs.go-version }}
 
     - name: Setup .NET
       if: inputs.dotnet-version != ''
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
         dotnet-version: ${{ inputs.dotnet-version }}

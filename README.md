@@ -34,7 +34,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: Utdanningsdirektoratet/dit-github-actions/js/lint@v1
         with:
           node-version: "22"
@@ -53,7 +53,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: Utdanningsdirektoratet/dit-github-actions/github/runtimes@v1
         with:
           node-version: "22"
@@ -82,7 +82,7 @@ jobs:
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: build
         uses: Utdanningsdirektoratet/dit-github-actions/docker/build@v1
         with:
@@ -135,7 +135,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: Utdanningsdirektoratet/dit-github-actions/goupdate/install@v1
@@ -199,10 +199,10 @@ jobs:
     outputs:
       package-name: ${{ steps.package.outputs.package-name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: Utdanningsdirektoratet/dit-github-actions/github/runtimes@v1
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
 
       - uses: Utdanningsdirektoratet/dit-github-actions/dotnet/install@v1
 
@@ -226,7 +226,7 @@ jobs:
           project-id: ${{ secrets.DXP_PROJECT_ID }}
           client-key: ${{ secrets.DXP_CLIENT_KEY }}
           client-secret: ${{ secrets.DXP_CLIENT_SECRET }}
-          direct-deploy: 'true'
+          direct-deploy: "true"
 ```
 
 </details>
@@ -270,22 +270,22 @@ Create or checkout a branch from a source branch. If the branch exists, optional
 - uses: Utdanningsdirektoratet/dit-github-actions/git/checkout@v1
   id: branch
   with:
-    branch: "updates/{date}"        # resolves → updates/2026-02-22
+    branch: "updates/{date}" # resolves → updates/2026-02-22
     source-branch: main
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `branch` | yes | | Branch name (`{date}` template supported) | `goupdate/auto-update-minor` |
-| `source-branch` | yes | | Source branch to create from or ff-merge | `main` |
-| `auto-ff` | | `true` | Fast-forward merge from source on existing branches | `true` |
-| `create-branch` | | `true` | Create branch from source if missing | `true` |
+| Input           | Required | Default | Description                                         | Example                      |
+| --------------- | :------: | ------- | --------------------------------------------------- | ---------------------------- |
+| `branch`        |   yes    |         | Branch name (`{date}` template supported)           | `goupdate/auto-update-minor` |
+| `source-branch` |   yes    |         | Source branch to create from or ff-merge            | `main`                       |
+| `auto-ff`       |          | `true`  | Fast-forward merge from source on existing branches | `true`                       |
+| `create-branch` |          | `true`  | Create branch from source if missing                | `true`                       |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `branch-name` | Resolved branch name | `updates/2026-02-22` |
-| `branch-exists` | Whether branch already existed | `true` |
-| `diverged` | Whether branch diverged from source | `false` |
+| Output          | Description                         | Example              |
+| --------------- | ----------------------------------- | -------------------- |
+| `branch-name`   | Resolved branch name                | `updates/2026-02-22` |
+| `branch-exists` | Whether branch already existed      | `true`               |
+| `diverged`      | Whether branch diverged from source | `false`              |
 
 ---
 
@@ -298,18 +298,18 @@ Stage and commit all changes.
 ```yaml
 - uses: Utdanningsdirektoratet/dit-github-actions/git/commit@v1
   with:
-    message: "GoUpdate: minor update ({date})"  # resolves → GoUpdate: minor update (2026-02-22)
+    message: "GoUpdate: minor update ({date})" # resolves → GoUpdate: minor update (2026-02-22)
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `message` | | `GoUpdate: Update` | Commit message (`{date}`, `{branch}` templates) | `"chore: update deps ({date})"` |
-| `git-user-name` | | `github-actions[bot]` | Commit author name | `my-bot` |
-| `git-user-email` | | `github-actions[bot]@users.noreply.github.com` | Commit author email | `bot@example.com` |
+| Input            | Required | Default                                        | Description                                     | Example                         |
+| ---------------- | :------: | ---------------------------------------------- | ----------------------------------------------- | ------------------------------- |
+| `message`        |          | `GoUpdate: Update`                             | Commit message (`{date}`, `{branch}` templates) | `"chore: update deps ({date})"` |
+| `git-user-name`  |          | `github-actions[bot]`                          | Commit author name                              | `my-bot`                        |
+| `git-user-email` |          | `github-actions[bot]@users.noreply.github.com` | Commit author email                             | `bot@example.com`               |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `has-changes` | Whether any changes were committed | `true` |
+| Output        | Description                        | Example |
+| ------------- | ---------------------------------- | ------- |
+| `has-changes` | Whether any changes were committed | `true`  |
 
 ---
 
@@ -326,14 +326,14 @@ Setup language runtimes. All inputs opt-in — only specified runtimes are insta
     node-pms: "pnpm"
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `node-version` | | `""` | Node.js version | `"22"` |
-| `node-pms` | | `""` | Package managers (comma-separated) | `"pnpm"`, `"npm,yarn"` |
-| `php-version` | | `""` | PHP version | `"8.3"` |
-| `python-version` | | `""` | Python version | `"3.12"` |
-| `go-version` | | `""` | Go version | `"1.22"` |
-| `dotnet-version` | | `""` | .NET version | `"8.0.x"` |
+| Input            | Required | Default | Description                        | Example                |
+| ---------------- | :------: | ------- | ---------------------------------- | ---------------------- |
+| `node-version`   |          | `""`    | Node.js version                    | `"22"`                 |
+| `node-pms`       |          | `""`    | Package managers (comma-separated) | `"pnpm"`, `"npm,yarn"` |
+| `php-version`    |          | `""`    | PHP version                        | `"8.3"`                |
+| `python-version` |          | `""`    | Python version                     | `"3.12"`               |
+| `go-version`     |          | `""`    | Go version                         | `"1.22"`               |
+| `dotnet-version` |          | `""`    | .NET version                       | `"8.0.x"`              |
 
 ---
 
@@ -351,19 +351,19 @@ Clone a repository using GitHub App token or fallback token.
     app-private-key: ${{ secrets.APP_KEY }}
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `repository` | yes | | Repository to clone (`owner/repo`) | `Utdanningsdirektoratet/my-repo` |
-| `path` | yes | | Directory to clone into | `./config` |
-| `ref` | | `""` | Branch, tag, or SHA to checkout | `main`, `v1.0.0` |
-| `depth` | | `1` | Clone depth (`0` = full history) | `1` |
-| `app-id` | | `""` | GitHub App ID | `${{ secrets.APP_ID }}` |
-| `app-private-key` | | `""` | GitHub App private key | `${{ secrets.APP_KEY }}` |
-| `github-token` | | `""` | Fallback token (if no App credentials) | `${{ secrets.GH_TOKEN }}` |
+| Input             | Required | Default | Description                            | Example                          |
+| ----------------- | :------: | ------- | -------------------------------------- | -------------------------------- |
+| `repository`      |   yes    |         | Repository to clone (`owner/repo`)     | `Utdanningsdirektoratet/my-repo` |
+| `path`            |   yes    |         | Directory to clone into                | `./config`                       |
+| `ref`             |          | `""`    | Branch, tag, or SHA to checkout        | `main`, `v1.0.0`                 |
+| `depth`           |          | `1`     | Clone depth (`0` = full history)       | `1`                              |
+| `app-id`          |          | `""`    | GitHub App ID                          | `${{ secrets.APP_ID }}`          |
+| `app-private-key` |          | `""`    | GitHub App private key                 | `${{ secrets.APP_KEY }}`         |
+| `github-token`    |          | `""`    | Fallback token (if no App credentials) | `${{ secrets.GH_TOKEN }}`        |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `sha` | SHA of the cloned commit | `abc1234def5678` |
+| Output | Description              | Example          |
+| ------ | ------------------------ | ---------------- |
+| `sha`  | SHA of the cloned commit | `abc1234def5678` |
 
 > Provide `app-id` + `app-private-key` (GitHub App), `github-token`, or neither (public repos only).
 
@@ -384,17 +384,17 @@ Push commits with optional GitHub App token to trigger downstream workflows.
     branch: feature/my-branch
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `app-id` | | `""` | GitHub App ID (triggers workflows) | `${{ secrets.APP_ID }}` |
-| `app-private-key` | | `""` | GitHub App private key | `${{ secrets.APP_KEY }}` |
-| `github-token` | | `""` | Fallback token (no workflow trigger) | `${{ secrets.GH_TOKEN }}` |
-| `branch` | yes | | Branch to push | `goupdate/auto-update-minor` |
+| Input             | Required | Default | Description                          | Example                      |
+| ----------------- | :------: | ------- | ------------------------------------ | ---------------------------- |
+| `app-id`          |          | `""`    | GitHub App ID (triggers workflows)   | `${{ secrets.APP_ID }}`      |
+| `app-private-key` |          | `""`    | GitHub App private key               | `${{ secrets.APP_KEY }}`     |
+| `github-token`    |          | `""`    | Fallback token (no workflow trigger) | `${{ secrets.GH_TOKEN }}`    |
+| `branch`          |   yes    |         | Branch to push                       | `goupdate/auto-update-minor` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `pushed` | Whether changes were pushed | `true` |
-| `sha` | SHA of the pushed commit | `abc1234def5678` |
+| Output   | Description                 | Example          |
+| -------- | --------------------------- | ---------------- |
+| `pushed` | Whether changes were pushed | `true`           |
+| `sha`    | SHA of the pushed commit    | `abc1234def5678` |
 
 > Use `app-id` + `app-private-key` to trigger workflows. `github-token` pushes silently.
 
@@ -417,21 +417,21 @@ Create or update a pull request. If a PR already exists for the same head/base, 
     head: goupdate/auto-update-minor
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `app-id` | | `""` | GitHub App ID | `${{ secrets.APP_ID }}` |
-| `app-private-key` | | `""` | GitHub App private key | `${{ secrets.APP_KEY }}` |
-| `github-token` | | `""` | Fallback token | `${{ secrets.GH_TOKEN }}` |
-| `title` | yes | | PR title (`{date}`, `{base}`, `{head}` templates) | `"Update deps ({date})"` |
-| `body` | | `""` | PR body (`{date}`, `{base}`, `{head}` templates) | `"Merging {head} into {base}"` |
-| `base` | yes | | Base branch | `main` |
-| `head` | yes | | Head branch | `goupdate/auto-update-minor` |
+| Input             | Required | Default | Description                                       | Example                        |
+| ----------------- | :------: | ------- | ------------------------------------------------- | ------------------------------ |
+| `app-id`          |          | `""`    | GitHub App ID                                     | `${{ secrets.APP_ID }}`        |
+| `app-private-key` |          | `""`    | GitHub App private key                            | `${{ secrets.APP_KEY }}`       |
+| `github-token`    |          | `""`    | Fallback token                                    | `${{ secrets.GH_TOKEN }}`      |
+| `title`           |   yes    |         | PR title (`{date}`, `{base}`, `{head}` templates) | `"Update deps ({date})"`       |
+| `body`            |          | `""`    | PR body (`{date}`, `{base}`, `{head}` templates)  | `"Merging {head} into {base}"` |
+| `base`            |   yes    |         | Base branch                                       | `main`                         |
+| `head`            |   yes    |         | Head branch                                       | `goupdate/auto-update-minor`   |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `pr-number` | PR number | `42` |
-| `pr-url` | PR URL | `https://github.com/org/repo/pull/42` |
-| `created` | Whether a new PR was created | `true` |
+| Output      | Description                  | Example                               |
+| ----------- | ---------------------------- | ------------------------------------- |
+| `pr-number` | PR number                    | `42`                                  |
+| `pr-url`    | PR URL                       | `https://github.com/org/repo/pull/42` |
+| `created`   | Whether a new PR was created | `true`                                |
 
 ---
 
@@ -448,22 +448,22 @@ Wait for checks and merge a pull request. Polls until checks pass (or timeout), 
     wait-for-checks: "600"
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `app-id` | | `""` | GitHub App ID | `${{ secrets.APP_ID }}` |
-| `app-private-key` | | `""` | GitHub App private key | `${{ secrets.APP_KEY }}` |
-| `github-token` | | `""` | Fallback token | `${{ secrets.GH_TOKEN }}` |
-| `pr-number` | yes | | PR number to merge | `42` |
-| `merge-method` | | `squash` | Merge strategy | `squash`, `merge`, `rebase` |
-| `wait-for-checks` | | `300` | Timeout in seconds (`0` = skip) | `600` |
-| `check-interval` | | `15` | Poll interval in seconds | `15` |
-| `notify` | | `""` | Users/teams to ping on failure | `@myteam` |
-| `skip-merge-comment` | | `""` | If set, skip merge and post this as a PR comment | `"Skipping auto-merge: manual review required"` |
+| Input                | Required | Default  | Description                                      | Example                                         |
+| -------------------- | :------: | -------- | ------------------------------------------------ | ----------------------------------------------- |
+| `app-id`             |          | `""`     | GitHub App ID                                    | `${{ secrets.APP_ID }}`                         |
+| `app-private-key`    |          | `""`     | GitHub App private key                           | `${{ secrets.APP_KEY }}`                        |
+| `github-token`       |          | `""`     | Fallback token                                   | `${{ secrets.GH_TOKEN }}`                       |
+| `pr-number`          |   yes    |          | PR number to merge                               | `42`                                            |
+| `merge-method`       |          | `squash` | Merge strategy                                   | `squash`, `merge`, `rebase`                     |
+| `wait-for-checks`    |          | `300`    | Timeout in seconds (`0` = skip)                  | `600`                                           |
+| `check-interval`     |          | `15`     | Poll interval in seconds                         | `15`                                            |
+| `notify`             |          | `""`     | Users/teams to ping on failure                   | `@myteam`                                       |
+| `skip-merge-comment` |          | `""`     | If set, skip merge and post this as a PR comment | `"Skipping auto-merge: manual review required"` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `merged` | Whether PR was merged | `true` |
-| `checks-passed` | Whether checks passed | `true` |
+| Output          | Description           | Example |
+| --------------- | --------------------- | ------- |
+| `merged`        | Whether PR was merged | `true`  |
+| `checks-passed` | Whether checks passed | `true`  |
 
 ---
 
@@ -477,14 +477,14 @@ Install [goupdate](https://github.com/ajxudir/goupdate) binary from GitHub relea
 - uses: Utdanningsdirektoratet/dit-github-actions/goupdate/install@v1
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `version` | | `latest` | Version or tag | `v1.2.0` |
-| `repo` | | `ajxudir/goupdate` | GitHub repo | `ajxudir/goupdate` |
-| `github-token` | | `""` | Avoids API rate limits | `${{ secrets.GITHUB_TOKEN }}` |
+| Input          | Required | Default            | Description            | Example                       |
+| -------------- | :------: | ------------------ | ---------------------- | ----------------------------- |
+| `version`      |          | `latest`           | Version or tag         | `v1.2.0`                      |
+| `repo`         |          | `ajxudir/goupdate` | GitHub repo            | `ajxudir/goupdate`            |
+| `github-token` |          | `""`               | Avoids API rate limits | `${{ secrets.GITHUB_TOKEN }}` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
+| Output    | Description       | Example |
+| --------- | ----------------- | ------- |
 | `version` | Installed version | `1.2.0` |
 
 ---
@@ -497,14 +497,14 @@ Detect package managers and lock files in the repository.
 - uses: Utdanningsdirektoratet/dit-github-actions/goupdate/scan@v1
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `working-directory` | | `.` | Directory to scan | `./packages/app` |
+| Input               | Required | Default | Description       | Example          |
+| ------------------- | :------: | ------- | ----------------- | ---------------- |
+| `working-directory` |          | `.`     | Directory to scan | `./packages/app` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `package-managers` | Detected package managers (comma-separated) | `npm,pip` |
-| `rules` | Detected rules (comma-separated) | `package-lock.json,requirements.txt` |
+| Output             | Description                                 | Example                              |
+| ------------------ | ------------------------------------------- | ------------------------------------ |
+| `package-managers` | Detected package managers (comma-separated) | `npm,pip`                            |
+| `rules`            | Detected rules (comma-separated)            | `package-lock.json,requirements.txt` |
 
 ---
 
@@ -517,17 +517,17 @@ Check for outdated dependencies with major/minor/patch breakdown.
   uses: Utdanningsdirektoratet/dit-github-actions/goupdate/outdated@v1
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `working-directory` | | `.` | Directory to check | `.` |
+| Input               | Required | Default | Description        | Example |
+| ------------------- | :------: | ------- | ------------------ | ------- |
+| `working-directory` |          | `.`     | Directory to check | `.`     |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `total` | Total dependencies | `120` |
-| `total-outdated` | Total outdated | `8` |
-| `major` | Major updates available | `2` |
-| `minor` | Minor updates available | `3` |
-| `patch` | Patch updates available | `3` |
+| Output           | Description             | Example |
+| ---------------- | ----------------------- | ------- |
+| `total`          | Total dependencies      | `120`   |
+| `total-outdated` | Total outdated          | `8`     |
+| `major`          | Major updates available | `2`     |
+| `minor`          | Minor updates available | `3`     |
+| `patch`          | Patch updates available | `3`     |
 
 ---
 
@@ -542,13 +542,13 @@ Apply dependency updates. Does **not** commit or push — use [`git/commit`](#gi
     update-type: minor
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `update-type` | | `minor` | Update level | `major`, `minor`, `patch` |
+| Input         | Required | Default | Description  | Example                   |
+| ------------- | :------: | ------- | ------------ | ------------------------- |
+| `update-type` |          | `minor` | Update level | `major`, `minor`, `patch` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `has-changes` | Whether any files changed | `true` |
+| Output            | Description                              | Example |
+| ----------------- | ---------------------------------------- | ------- |
+| `has-changes`     | Whether any files changed                | `true`  |
 | `partial-failure` | Some updates failed but others succeeded | `false` |
 
 > Uses `--continue-on-fail`: if some updates fail but others succeed, `partial-failure=true` lets the workflow create a PR without auto-merging.
@@ -572,15 +572,15 @@ Install and cache Node.js dependencies. Auto-detects package manager from lock f
 - uses: Utdanningsdirektoratet/dit-github-actions/js/install@v1
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `working-directory` | | `.` | Directory with `package.json` | `./frontend` |
-| `package-manager` | | auto | Force specific PM | `pnpm`, `yarn`, `npm` |
+| Input               | Required | Default | Description                   | Example               |
+| ------------------- | :------: | ------- | ----------------------------- | --------------------- |
+| `working-directory` |          | `.`     | Directory with `package.json` | `./frontend`          |
+| `package-manager`   |          | auto    | Force specific PM             | `pnpm`, `yarn`, `npm` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `package-manager` | Detected/forced package manager | `pnpm` |
-| `cache-hit` | Whether cache was restored | `true` |
+| Output            | Description                     | Example |
+| ----------------- | ------------------------------- | ------- |
+| `package-manager` | Detected/forced package manager | `pnpm`  |
+| `cache-hit`       | Whether cache was restored      | `true`  |
 
 ---
 
@@ -595,15 +595,15 @@ Run lint checks. Sets up Node.js, installs dependencies, and runs the lint comma
     lint-command: "lint"
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `node-version` | | `22` | Node.js version | `"20"` |
-| `working-directory` | | `.` | Directory to run lint in | `./frontend` |
-| `lint-command` | | `lint` | npm script to run | `lint`, `lint:ci` |
+| Input               | Required | Default | Description              | Example           |
+| ------------------- | :------: | ------- | ------------------------ | ----------------- |
+| `node-version`      |          | `22`    | Node.js version          | `"20"`            |
+| `working-directory` |          | `.`     | Directory to run lint in | `./frontend`      |
+| `lint-command`      |          | `lint`  | npm script to run        | `lint`, `lint:ci` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `package-manager` | Detected package manager | `pnpm` |
+| Output            | Description              | Example |
+| ----------------- | ------------------------ | ------- |
+| `package-manager` | Detected package manager | `pnpm`  |
 
 ---
 
@@ -621,15 +621,15 @@ Install Playwright browsers with caching. Run tests separately (e.g. `pnpm test:
 - run: pnpm test:e2e
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `working-directory` | | `.` | Directory with Playwright config | `./e2e` |
-| `browsers` | | `""` | Browsers to install (empty = all) | `"chromium"`, `"chromium firefox webkit"` |
+| Input               | Required | Default | Description                       | Example                                   |
+| ------------------- | :------: | ------- | --------------------------------- | ----------------------------------------- |
+| `working-directory` |          | `.`     | Directory with Playwright config  | `./e2e`                                   |
+| `browsers`          |          | `""`    | Browsers to install (empty = all) | `"chromium"`, `"chromium firefox webkit"` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `playwright-version` | Installed Playwright version | `1.42.0` |
-| `cache-hit` | Whether browser cache was restored | `true` |
+| Output               | Description                        | Example  |
+| -------------------- | ---------------------------------- | -------- |
+| `playwright-version` | Installed Playwright version       | `1.42.0` |
+| `cache-hit`          | Whether browser cache was restored | `true`   |
 
 ---
 
@@ -651,14 +651,14 @@ Restore NuGet packages with caching. Caches `~/.nuget/packages` keyed by `.cspro
     nuget-config: nuget.config
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `working-directory` | | `.` | Directory with solution/project | `./src` |
-| `nuget-config` | | `""` | Path to `nuget.config` | `nuget.config` |
+| Input               | Required | Default | Description                     | Example        |
+| ------------------- | :------: | ------- | ------------------------------- | -------------- |
+| `working-directory` |          | `.`     | Directory with solution/project | `./src`        |
+| `nuget-config`      |          | `""`    | Path to `nuget.config`          | `nuget.config` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `cache-hit` | Whether NuGet cache was restored | `true` |
+| Output      | Description                      | Example |
+| ----------- | -------------------------------- | ------- |
+| `cache-hit` | Whether NuGet cache was restored | `true`  |
 
 ---
 
@@ -675,15 +675,15 @@ Package naming: `{app-name}.cms.app.{YYYYMMDD}.{run_number}.nupkg`
     app-name: myapp
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `app-name` | yes | | Application name for package | `myapp` |
-| `configuration` | | `Release` | Build configuration | `Release`, `Debug` |
-| `version` | | auto | Package version (default: `YYYYMMDD.{run_number}`) | `1.0.0` |
+| Input           | Required | Default   | Description                                        | Example            |
+| --------------- | :------: | --------- | -------------------------------------------------- | ------------------ |
+| `app-name`      |   yes    |           | Application name for package                       | `myapp`            |
+| `configuration` |          | `Release` | Build configuration                                | `Release`, `Debug` |
+| `version`       |          | auto      | Package version (default: `YYYYMMDD.{run_number}`) | `1.0.0`            |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `package-name` | Generated file name | `myapp.cms.app.20260222.42.nupkg` |
+| Output         | Description           | Example                                |
+| -------------- | --------------------- | -------------------------------------- |
+| `package-name` | Generated file name   | `myapp.cms.app.20260222.42.nupkg`      |
 | `package-path` | Full path to the file | `/tmp/myapp.cms.app.20260222.42.nupkg` |
 
 ---
@@ -708,23 +708,23 @@ Build and push a Docker image with registry-based layer caching.
     push-by-digest: "true"
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `registry` | yes | | Registry host | `registry.example.com` |
-| `username` | yes | | Registry username | `${{ secrets.REG_USER }}` |
-| `password` | yes | | Registry password/token | `${{ secrets.REG_PASS }}` |
-| `image` | yes | | Image name (no registry prefix) | `myapp` |
-| `tag` | | `""` | Version tag | `v1.2.3` |
-| `tag-latest` | | `latest` | Rolling environment tag | `latest-production` |
-| `push-by-digest` | | `false` | Push by digest only (no tag) | `"true"` |
-| `context` | | `.` | Build context path | `./docker` |
-| `dockerfile` | | auto | Dockerfile path (default: `Dockerfile` in context dir) | `./Dockerfile.prod` |
-| `platforms` | | `linux/amd64` | Target platforms | `linux/amd64,linux/arm64` |
-| `build-args` | | `""` | Build arguments (multiline `KEY=VALUE`) | `NODE_ENV=production` |
+| Input            | Required | Default       | Description                                            | Example                   |
+| ---------------- | :------: | ------------- | ------------------------------------------------------ | ------------------------- |
+| `registry`       |   yes    |               | Registry host                                          | `registry.example.com`    |
+| `username`       |   yes    |               | Registry username                                      | `${{ secrets.REG_USER }}` |
+| `password`       |   yes    |               | Registry password/token                                | `${{ secrets.REG_PASS }}` |
+| `image`          |   yes    |               | Image name (no registry prefix)                        | `myapp`                   |
+| `tag`            |          | `""`          | Version tag                                            | `v1.2.3`                  |
+| `tag-latest`     |          | `latest`      | Rolling environment tag                                | `latest-production`       |
+| `push-by-digest` |          | `false`       | Push by digest only (no tag)                           | `"true"`                  |
+| `context`        |          | `.`           | Build context path                                     | `./docker`                |
+| `dockerfile`     |          | auto          | Dockerfile path (default: `Dockerfile` in context dir) | `./Dockerfile.prod`       |
+| `platforms`      |          | `linux/amd64` | Target platforms                                       | `linux/amd64,linux/arm64` |
+| `build-args`     |          | `""`          | Build arguments (multiline `KEY=VALUE`)                | `NODE_ENV=production`     |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `digest` | Image digest | `sha256:abc123...` |
+| Output      | Description          | Example                             |
+| ----------- | -------------------- | ----------------------------------- |
+| `digest`    | Image digest         | `sha256:abc123...`                  |
 | `image-ref` | Full image reference | `registry.example.com/myapp:v1.2.3` |
 
 ---
@@ -745,19 +745,19 @@ Tag an existing image by digest. Creates version tag, short SHA tag, and rolling
     tag-latest: latest-production
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `registry` | yes | | Registry host | `registry.example.com` |
-| `username` | yes | | Registry username | `${{ secrets.REG_USER }}` |
-| `password` | yes | | Registry password | `${{ secrets.REG_PASS }}` |
-| `image` | yes | | Image name | `myapp` |
-| `digest` | yes | | Digest to tag | `sha256:abc123...` |
-| `tag` | | auto | Version tag (auto: `YYMMDD-HHMMSS_<sha>`) | `v1.2.3` |
-| `tag-latest` | | `latest` | Rolling environment tag | `latest-production` |
+| Input        | Required | Default  | Description                               | Example                   |
+| ------------ | :------: | -------- | ----------------------------------------- | ------------------------- |
+| `registry`   |   yes    |          | Registry host                             | `registry.example.com`    |
+| `username`   |   yes    |          | Registry username                         | `${{ secrets.REG_USER }}` |
+| `password`   |   yes    |          | Registry password                         | `${{ secrets.REG_PASS }}` |
+| `image`      |   yes    |          | Image name                                | `myapp`                   |
+| `digest`     |   yes    |          | Digest to tag                             | `sha256:abc123...`        |
+| `tag`        |          | auto     | Version tag (auto: `YYMMDD-HHMMSS_<sha>`) | `v1.2.3`                  |
+| `tag-latest` |          | `latest` | Rolling environment tag                   | `latest-production`       |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `tag` | Applied version tag | `260222-143000_abc1234` |
+| Output      | Description          | Example                                            |
+| ----------- | -------------------- | -------------------------------------------------- |
+| `tag`       | Applied version tag  | `260222-143000_abc1234`                            |
 | `image-ref` | Full image reference | `registry.example.com/myapp:260222-143000_abc1234` |
 
 ---
@@ -777,15 +777,15 @@ Set image on a Kubernetes deployment. Kubeconfig uses `mktemp` with `if: always(
     image: registry.example.com/myapp:v1.2.3
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `kube-config` | yes | | Base64-encoded kubeconfig | `${{ secrets.KUBECONFIG }}` |
-| `namespace` | yes | | Target namespace | `production` |
-| `deployment` | yes | | Deployment name | `myapp` |
-| `image` | yes | | Full image reference | `registry.example.com/myapp:v1.2.3` |
+| Input         | Required | Default | Description               | Example                             |
+| ------------- | :------: | ------- | ------------------------- | ----------------------------------- |
+| `kube-config` |   yes    |         | Base64-encoded kubeconfig | `${{ secrets.KUBECONFIG }}`         |
+| `namespace`   |   yes    |         | Target namespace          | `production`                        |
+| `deployment`  |   yes    |         | Deployment name           | `myapp`                             |
+| `image`       |   yes    |         | Full image reference      | `registry.example.com/myapp:v1.2.3` |
 
-| Output | Description | Example |
-|--------|-------------|---------|
+| Output   | Description       | Example             |
+| -------- | ----------------- | ------------------- |
 | `status` | Deployment result | `success`, `failed` |
 
 ---
@@ -802,16 +802,16 @@ Wait for rollout with optional auto-rollback on failure.
     deployment: myapp
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `kube-config` | yes | | Base64-encoded kubeconfig | `${{ secrets.KUBECONFIG }}` |
-| `namespace` | yes | | Target namespace | `production` |
-| `deployment` | yes | | Deployment name | `myapp` |
-| `timeout` | | `300` | Timeout in seconds | `600` |
-| `rollback-on-failure` | | `true` | Auto-rollback on failure | `true` |
+| Input                 | Required | Default | Description               | Example                     |
+| --------------------- | :------: | ------- | ------------------------- | --------------------------- |
+| `kube-config`         |   yes    |         | Base64-encoded kubeconfig | `${{ secrets.KUBECONFIG }}` |
+| `namespace`           |   yes    |         | Target namespace          | `production`                |
+| `deployment`          |   yes    |         | Deployment name           | `myapp`                     |
+| `timeout`             |          | `300`   | Timeout in seconds        | `600`                       |
+| `rollback-on-failure` |          | `true`  | Auto-rollback on failure  | `true`                      |
 
-| Output | Description | Example |
-|--------|-------------|---------|
+| Output   | Description    | Example                            |
+| -------- | -------------- | ---------------------------------- |
 | `status` | Rollout result | `success`, `rolled-back`, `failed` |
 
 ---
@@ -834,15 +834,15 @@ Upload a deployment package to Optimizely DXP blob storage.
     client-secret: ${{ secrets.DXP_CLIENT_SECRET }}
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `package-path` | yes | | Path to `.nupkg` package | `${{ steps.package.outputs.package-path }}` |
-| `project-id` | yes | | DXP Project ID | `${{ secrets.DXP_PROJECT_ID }}` |
-| `client-key` | yes | | DXP API Client Key | `${{ secrets.DXP_CLIENT_KEY }}` |
-| `client-secret` | yes | | DXP API Client Secret | `${{ secrets.DXP_CLIENT_SECRET }}` |
+| Input           | Required | Default | Description              | Example                                     |
+| --------------- | :------: | ------- | ------------------------ | ------------------------------------------- |
+| `package-path`  |   yes    |         | Path to `.nupkg` package | `${{ steps.package.outputs.package-path }}` |
+| `project-id`    |   yes    |         | DXP Project ID           | `${{ secrets.DXP_PROJECT_ID }}`             |
+| `client-key`    |   yes    |         | DXP API Client Key       | `${{ secrets.DXP_CLIENT_KEY }}`             |
+| `client-secret` |   yes    |         | DXP API Client Secret    | `${{ secrets.DXP_CLIENT_SECRET }}`          |
 
-| Output | Description | Example |
-|--------|-------------|---------|
+| Output         | Description                | Example                           |
+| -------------- | -------------------------- | --------------------------------- |
 | `package-name` | Uploaded package file name | `myapp.cms.app.20260222.42.nupkg` |
 
 ---
@@ -863,23 +863,23 @@ Deploy, complete, or reset an Optimizely DXP deployment. Automatically resets st
     project-id: ${{ secrets.DXP_PROJECT_ID }}
     client-key: ${{ secrets.DXP_CLIENT_KEY }}
     client-secret: ${{ secrets.DXP_CLIENT_SECRET }}
-    direct-deploy: 'true'
+    direct-deploy: "true"
 ```
 
-| Input | Required | Default | Description | Example |
-|-------|:--------:|---------|-------------|---------|
-| `action` | yes | | Action to perform | `deploy`, `complete`, `reset` |
-| `target-environment` | yes | | Target DXP environment | `Integration`, `Preproduction`, `Production` |
-| `project-id` | yes | | DXP Project ID | `${{ secrets.DXP_PROJECT_ID }}` |
-| `client-key` | yes | | DXP API Client Key | `${{ secrets.DXP_CLIENT_KEY }}` |
-| `client-secret` | yes | | DXP API Client Secret | `${{ secrets.DXP_CLIENT_SECRET }}` |
-| `package-name` | | `""` | Package name (required for `deploy`) | `myapp.cms.app.20260222.42.nupkg` |
-| `direct-deploy` | | `false` | Skip slot verification (Integration) | `"true"` |
+| Input                | Required | Default | Description                          | Example                                      |
+| -------------------- | :------: | ------- | ------------------------------------ | -------------------------------------------- |
+| `action`             |   yes    |         | Action to perform                    | `deploy`, `complete`, `reset`                |
+| `target-environment` |   yes    |         | Target DXP environment               | `Integration`, `Preproduction`, `Production` |
+| `project-id`         |   yes    |         | DXP Project ID                       | `${{ secrets.DXP_PROJECT_ID }}`              |
+| `client-key`         |   yes    |         | DXP API Client Key                   | `${{ secrets.DXP_CLIENT_KEY }}`              |
+| `client-secret`      |   yes    |         | DXP API Client Secret                | `${{ secrets.DXP_CLIENT_SECRET }}`           |
+| `package-name`       |          | `""`    | Package name (required for `deploy`) | `myapp.cms.app.20260222.42.nupkg`            |
+| `direct-deploy`      |          | `false` | Skip slot verification (Integration) | `"true"`                                     |
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `deployment-id` | DXP deployment ID | `d-abc123` |
-| `status` | Deployment status | `InProgress`, `AwaitingVerification`, `completed`, `reset`, `skipped` |
+| Output          | Description       | Example                                                               |
+| --------------- | ----------------- | --------------------------------------------------------------------- |
+| `deployment-id` | DXP deployment ID | `d-abc123`                                                            |
+| `status`        | Deployment status | `InProgress`, `AwaitingVerification`, `completed`, `reset`, `skipped` |
 
 ---
 
@@ -906,21 +906,23 @@ All `github/*` actions auto-detect auth method: provide `app-id` + `app-private-
 
 ## Versioning
 
-| Ref | Use |
-|-----|-----|
-| `@v1` | **Recommended** — latest stable |
-| `@v1.2.3` | Pinned for reproducibility |
-| `@main` | Latest commit |
+| Ref       | Use                             |
+| --------- | ------------------------------- |
+| `@v1`     | **Recommended** — latest stable |
+| `@v1.2.3` | Pinned for reproducibility      |
+| `@main`   | Latest commit                   |
 
 <details>
 <summary>Release process</summary>
 
 **Tag specific release:**
+
 ```bash
 git tag v1.0.1 && git push origin v1.0.1
 ```
 
 **Update rolling v1 tag:**
+
 ```bash
 git tag -f v1 && git push -f origin v1
 ```

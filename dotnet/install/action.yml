@@ -1,27 +1,27 @@
-name: 'DotNet Install'
-description: 'Restore NuGet packages with caching'
+name: "DotNet Install"
+description: "Restore NuGet packages with caching"
 
 inputs:
   working-directory:
-    description: 'Directory containing the .NET solution or project'
+    description: "Directory containing the .NET solution or project"
     required: false
-    default: '.'
+    default: "."
   nuget-config:
-    description: 'Path to nuget.config (empty = default NuGet behavior)'
+    description: "Path to nuget.config (empty = default NuGet behavior)"
     required: false
-    default: ''
+    default: ""
 
 outputs:
   cache-hit:
-    description: 'Whether the NuGet cache was restored'
+    description: "Whether the NuGet cache was restored"
     value: ${{ steps.cache.outputs.cache-hit }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Cache NuGet packages
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ${{ env.NUGET_PACKAGES || '~/.nuget/packages' }}
         key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.config', '**/nuget.config') }}
