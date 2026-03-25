@@ -28,7 +28,7 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: azure/setup-kubectl@v3
+    - uses: azure/setup-kubectl@v4
 
     - name: Setup kubeconfig
       id: kubeconfig
@@ -87,4 +87,3 @@ runs:
       env:
         KUBECONFIG_FILE: ${{ steps.kubeconfig.outputs.path }}
       run: rm -f "$KUBECONFIG_FILE"
-
