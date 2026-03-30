@@ -28,7 +28,7 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: azure/setup-kubectl@v4
+    - uses: azure/setup-kubectl@v5
 
     - name: Setup kubeconfig
       id: kubeconfig
